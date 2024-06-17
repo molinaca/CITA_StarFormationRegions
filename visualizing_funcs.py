@@ -105,6 +105,29 @@ def plot_RGB_histogram(R, G, B, title, image_name):
     plt.show()
 
 # 3: Getting Images
+def create_image(R, G, B):
+    '''
+    Function that when given R, G, B arrays that are already 2d and normalized, will create an image. 
+
+    Parameters:
+    R, G, B : 2d numpy arrays that are from 0 to 255
+
+    Returns:
+    RGB_image : RGB image object
+    '''
+    
+    R_uint8 = R.astype(np.uint8)
+    G_uint8 = G.astype(np.uint8)
+    B_uint8 = B.astype(np.uint8)
+
+    R_image = Image.fromarray(R_uint8)
+    G_image = Image.fromarray(G_uint8)
+    B_image = Image.fromarray(B_uint8)
+
+    RGB_image = Image.merge('RGB', (R_image, G_image, B_image))
+
+    return RGB_image
+
 def get_sky_image(data_dict, R, G, B, scale=True):
     '''
     Function that creates an RGB image of the whole sky using the R, G and B color channels. It produces an image at each distance slice
