@@ -181,5 +181,23 @@ def get_rgb_ratios(R, G, B, title, image_name):
     plt.show()
 
     return ratio_RG, ratio_RB, ratio_GB
+
+def get_rgb_roi(R, G, B, x, y, w, h):
+    '''
+    Function that gets the RGB values of a region of interest (roi) in an image
+
+    Parameters:
+    R, G, B : 2d numpy arrays that are from 0 to 255
+    x, y : coordinates of the top left corner of the roi
+    w, h : width and height of the roi
+
+    Returns:
+    R_roi, G_roi, B_roi : 2d numpy arrays of the roi
+    '''
+    R_roi = R[y:y+h, x:x+w]
+    G_roi = G[y:y+h, x:x+w]
+    B_roi = B[y:y+h, x:x+w]
+
+    return R_roi, G_roi, B_roi
            
     
