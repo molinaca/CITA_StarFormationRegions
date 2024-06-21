@@ -1,12 +1,13 @@
 #This script contains any functions needed to perform calculations with arrays in the main script
 import numpy as np
+import ephem
 import healpy as hp
 from constants import h, c, k
 import matplotlib.pyplot as plt
 
 
 
-# 1: Scientific Functions
+## 1: Scientific Functions
 
 def Planck (nu, Tmap):
     '''
@@ -42,7 +43,7 @@ def WiensLaw(T):
     nu_max = 2.824*k*T/h
     return nu_max
 
-# 2: Manipulating Arrays 
+## 2: Manipulating Arrays 
 def increase_temp_res(data_dict, nside_new):
     '''
     Function used to increase the resolution of the temperature map
@@ -126,7 +127,52 @@ def normalize_dEBVandB(data_dict, dens_temp, frequency):
 
     return dens_temp_norm
 
-# 3: Functions related to RGB
+### 2.1: Functions for sf tracers
+def remove_tracers_in_mask(long, lat, distance_bins):
+    '''
+    Function that removes any tracers that are within the declination mask (any dec < -30 degrees). It will output new, filtered arrays. 
+
+    Parameters:
+    long: list within list of longitudes for each distance slice
+    lat: list within list of latitudes for each distance slice
+    distance_bins: number of distance bins
+
+    Output:
+    filtered_long: list within list of longitudes for each distance slice after filtering
+    filtered_lat: list within list of latitudes for each distance slice after filtering
+    '''
+    
+    #Initialize new, filtered arrays in the same form as long, lat
+    filtered_long = [[] for i in range(distance_bins)]
+    filtered_lat = [[] for i in range(distance_bins)]
+
+    for ds_index in range(distance_bins):
+        long_atdist = long[ds_index] #To make it easier, get list of long and lat at each distance slice
+        lat_atdist = lat[ds_index]
+
+        ntracers = len(long_atdist) #Only want number at each distance slice
+
+        #Initialize ra anddec
+        ra = np.zeros(ntracers)
+        dec = np.zeros(ntracers)
+
+        for index in range(ntracers):
+            l = long_atdist[index] #get each long and lat
+            b = lat_atdist[index]
+            
+            galactic = ephem.Galactic(l/180.0*np.pi,b/180.0*np.pi)
+            equatorial = ephem.Equatorial(galactic, epoch=ephem.J2000)
+            ra[index]=equatorial.ra/np.pi*180.0
+            dec[index]=equatorial.dec/np.pi*180.0
+
+            #If not within mask, add to new arrays
+            if dec[index] > -30:
+                filtered_long[ds_index].append(l)
+                filtered_lat[ds_index].append(b)
+        
+    return filtered_long, filtered_lat
+
+## 3: Functions related to RGB
 def get_RGB(dens_temp):
     '''
     Function that gets the R, G and B color channels from the normalized map of dust density and temperature emission. It also scales the values
@@ -199,5 +245,6 @@ def get_rgb_roi(R, G, B, x, y, w, h):
     B_roi = B[y:y+h, x:x+w]
 
     return R_roi, G_roi, B_roi
+    
            
     
