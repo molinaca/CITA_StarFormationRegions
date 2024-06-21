@@ -1,0 +1,2 @@
+#Ignoring settings file so that it does not change everytime user changes settings
+settings.py
