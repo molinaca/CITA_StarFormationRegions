@@ -1,12 +1,13 @@
 #This script contains any functions required to make plots in the 2D_RGBmap.ipynb jupyter notebook
 import numpy as np
+import ephem
 import healpy as hp
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 from PIL import Image, ImageOps
 
-# 1: Healpy plotting functions
+### 1: Healpy plotting functions
 def plot_3D_temperature_slice_maps(data_dict):
 
     '''
@@ -74,7 +75,7 @@ def plot_map_region(map, distance, longitude, latitude, x, y, min_map, max_map, 
     '''
     hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, unit=unit_map, notext=True)
 
-# 2: Matplotlib plotting functions
+### 2: Matplotlib plotting functions
 def plot_RGB_histogram(R, G, B, title, image_name):
 
     '''
@@ -104,7 +105,47 @@ def plot_RGB_histogram(R, G, B, title, image_name):
     plt.savefig(image_name)
     plt.show()
 
-# 3: Getting Images
+#Functions used to make declination mask for whole map
+def create_declination_mask(nside, nested=True):
+        ### mask the map at np.abs(declinations) larger than 30
+        ### we used nested data sets in this analysis
+        ### inspired from https://stackoverflow.com/questions/29007648/pyephem-coordinate-transformation-galactic-to-equatorial
+        ### also inspired from this https://healpy.readthedocs.io/en/latest/tutorial.html
+        ### get the pixel indices
+        npix = hp.nside2npix(nside)
+        pixel_array = np.array(range(npix))
+        ### get the lat long coordinates to then mask over them
+        ls, bs=hp.pixelfunc.pix2ang(nside=nside, ipix=pixel_array, nest=nested, lonlat=True)
+        #### converting galactic coordinates to equatorial coordinates
+        ra = np.zeros(npix)
+        dec = np.zeros(npix)
+        for index in range(npix):
+            l = ls[index]
+            b = bs[index]
+            galactic = ephem.Galactic(l/180.0*np.pi,b/180.0*np.pi)
+            equatorial = ephem.Equatorial(galactic, epoch=ephem.J2000)
+            ra[index]=equatorial.ra/np.pi*180.0
+            dec[index]=equatorial.dec/np.pi*180.0
+            #print('%.13f %.13f' % (equatorial.ra/np.pi*180.0, equatorial.dec/np.pi*180.0))
+        return dec
+
+
+def plot_healpix_mollview(data, nside, pixel_index_array,total_sky_pixels,title,min=None,max=None,nest=True,unit=None,
+                             declination_mask=False):
+    plot_array = np.zeros(total_sky_pixels)
+
+    if declination_mask ==True:
+        dec = create_declination_mask(nside)
+        data_masked = data.copy()
+        data_masked[dec<-30]=hp.UNSEEN
+        plot_array[pixel_index_array]=data_masked
+
+    else:
+        plot_array[pixel_index_array]=data
+    
+    hp.mollview(plot_array,title=title,nest=nest,min=min,max=max,unit=unit)
+
+### 3: Getting Images
 def create_image(R, G, B):
     '''
     Function that when given R, G, B arrays that are already 2d and normalized, will create an image. 
