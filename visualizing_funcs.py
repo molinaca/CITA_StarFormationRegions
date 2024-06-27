@@ -169,6 +169,25 @@ def create_image(R, G, B):
 
     return RGB_image
 
+def brighten_image(image, factor):
+
+    '''
+    Function to brighten the images by a factor
+
+    Parameters:
+    factor: factor to brighten the images by
+
+    Output:
+    R, G, B: brightened RGB arrays
+    '''
+
+    image_float = image.astype(np.float32) / 255.
+    brightened_image = image_float * factor
+    brightened_image = np.clip(brightened_image, 0.0, 1.0)
+    image_float = np.clip(image_float, 0, 1)
+    brightened_image = (brightened_image * 255).astype(np.uint8)
+    return brightened_image
+
 def get_sky_image(data_dict, R, G, B, scale=True):
     '''
     Function that creates an RGB image of the whole sky using the R, G and B color channels. It produces an image at each distance slice
@@ -310,8 +329,8 @@ def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, im
     - Original Temperature Map at nside 32
     - New Temperature Map at nside 1024
     - E(B-V) Map
-    - Planck Map at 588, 1106, and 1765 GHz
-    - Normalized Density x Temperature Map at 588, 1106, and 1765 GHz
+    - Temperature Tracer Map at chosen frequencies
+    - Normalized Density x Temperature Map at chosen frequencies
     - RGB histogram and ratios
     - RGB scaled image
 
@@ -330,7 +349,7 @@ def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, im
     Ts = maps_dict["Temp_og"]
     Ts_new = maps_dict["Temp_new"]
     dEBV = maps_dict["Density"]
-    planck = maps_dict["Planck"]
+    temptracer = maps_dict["Temperature Tracer"]
     densxtemp = maps_dict["Normalized_denstemp"]
 
     ##First save images needed for the panel
@@ -347,23 +366,23 @@ def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, im
 
     for f_index in range(3):
     
-        hp.gnomview(planck[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Temperature Emission $B$ of {plot_title} at {int(frequency[f_index])} GHz', nest=True,min=1e-17, max=2e-15, unit=r'$\mathrm{W/M^{2}\cdot sr \cdot Hz}$', notext=True)
-        plt.savefig(image_path + f"planck_{int(frequency[f_index])}.png")
+        hp.gnomview(temptracer[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Temperature Tracer of {plot_title} at {frequency[f_index]} GHz', nest=True, min=None, max=None, unit=None , notext=True)
+        plt.savefig(image_path + f"temptracer_{frequency[f_index]}.png")
         plt.close()
-        hp.gnomview(densxtemp[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Normalized $B$ and $E(B-V)$ of {plot_title} at {int(frequency[f_index])} GHz', nest=True, min = 0, max = 0.2, unit=None, notext=True)
-        plt.savefig(image_path + f"dxT_norm_{int(frequency[f_index])}.png")
+        hp.gnomview(densxtemp[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title='Normalized $T$ Tracer and $E(B-V)$ ' + '\n' + f'of {plot_title} at {frequency[f_index]} GHz', nest=True, min = 0, max = 0.2, unit=None, notext=True)
+        plt.savefig(image_path + f"dxT_norm_{frequency[f_index]}.png")
         plt.close()
 
     ##Now create the panel
     
 
     #Creating panel of images of Cepheus LMC
-    panel = plt.figure(figsize=(18, 30))
+    panel = plt.figure(figsize=(18, 34))
     gs = gridspec.GridSpec(5, 3, panel)
 
     #Get image paths and names to not repeat code
 
-    img_names = ['T_og', 'T_new', 'dEBV', 'planck_588', 'planck_1106', 'planck_1765', 'dxT_norm_588', 'dxT_norm_1106', 'dxT_norm_1765', 'R', 'G', 'B', 'rgb_hist_scaled', 'rgb_hist_ratios', 'rgb_scaled'] #array of names
+    img_names = ['T_og', 'T_new', 'dEBV', f'temptracer_{frequency[0]}', f'temptracer_{frequency[1]}', f'temptracer_{frequency[2]}', f'dxT_norm_{frequency[0]}', f'dxT_norm_{frequency[1]}', f'dxT_norm_{frequency[2]}', 'R', 'G', 'B', 'rgb_hist_scaled', 'rgb_hist_ratios', 'rgb_scaled'] #array of names
 
     for i in range(5):  # Assuming 5 rows
         for j in range(3):  # Assuming 3 columns

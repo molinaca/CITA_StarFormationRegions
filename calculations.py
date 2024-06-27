@@ -9,23 +9,33 @@ import matplotlib.pyplot as plt
 
 ## 1: Scientific Functions
 
-def Planck (nu, Tmap):
+def get_temptracers_at_freq(nu, Tmap, normalize=True):
     '''
-    Function to calculate the Planck function at a frequency nu for a given temperature map
+    Function to find the temperatures at a frequency nu that will act as tracers for the RGB channels.
+    It does this by creating a function, currently this is the Planck Function
 
     Parameters:
     nu: frequency in Hz
     Tmap: temperature map in Kelvin
+    normalize (optional): boolean to normalize the Planck function
+
     h: planck constant from constants.py
     c: speed of light from constants.py
     k: boltzmann constant from constants.py
     x_d: variable used to simplify planck function
 
     Output:
-    B = 2*h*nu**3/c**2/(np.exp(x_d)-1) : planck function in units W/m^2/Hz/sr
+    rad : planck function at temperature in Tmap in units W/m^2/Hz/sr
     '''
     x_d = h*nu/(k*Tmap)
-    return 2*h*nu**3/c**2/(np.exp(x_d)-1)
+    rad = 2*h*nu**3/c**2/(np.exp(x_d)-1)
+    if normalize:
+        print("Normalizing by max")
+        freq_max = WiensLaw(Tmap)
+        x_d_max = h*freq_max/(k*Tmap)
+        rad_max = 2*h*freq_max**3/c**2/(np.exp(x_d_max)-1)
+        rad = rad/rad_max
+    return rad
 
 #Wien's Law 
 def WiensLaw(T):
@@ -66,14 +76,14 @@ def increase_temp_res(data_dict, nside_new):
 
     return Ts_new
 
-def multiply_dEBVandB(data_dict, dEBVmap, Bmap, frequency):
+def multiply_dEBVandTtracer(data_dict, dEBVmap, tracermap, frequency):
     '''
-    Function that multiplied the dust density (dEBV) by the temperature emission (B) at each distance slice and frequency. 
+    Function that multiplied the dust density (dEBV) by the temperature tracer map at each distance slice and frequency. 
 
     Parameters:
     data_dict: dictionary containing the data, used to obtain number of distance slices
     dEBVmap: dust density map with shape (distance_bin x pixel)
-    Bmap: temperature emission map with shape (frequency x distance_bin x pixel)
+    tracermap: temperature tracer map with shape (frequency x distance_bin x pixel)
     frequency: array containing the frequencies
 
     Output:
@@ -88,11 +98,11 @@ def multiply_dEBVandB(data_dict, dEBVmap, Bmap, frequency):
     for f_index in range(nfreq):
     
         for ds_index in range(model_nslices):
-            dens_temp[f_index, ds_index] = dEBVmap[ds_index]*Bmap[f_index, ds_index]
+            dens_temp[f_index, ds_index] = dEBVmap[ds_index]*tracermap[f_index, ds_index]
     
     return dens_temp
 
-def normalize_dEBVandB(data_dict, dens_temp, frequency):
+def normalize_multiplied_array(data_dict, dens_temp, frequency):
     '''
     Function that normalizes the newly multiplied map of dust density and temperature emission across the whole sky.  
 
@@ -199,11 +209,12 @@ def get_RGB(dens_temp):
         B_array[ds_index] = dens_temp[2, ds_index]
 
     #Make it so that its in between 0 and 255 and convert to uint8
-    R = (R_array*255).astype(np.uint8) 
-    G = (G_array*255).astype(np.uint8)
-    B = (B_array*255).astype(np.uint8)
+    R = (R_array*max_pixel).astype(np.uint8) 
+    G = (G_array*max_pixel).astype(np.uint8)
+    B = (B_array*max_pixel).astype(np.uint8)
 
     return R, G, B
+
 
 def get_rgb_ratios(R, G, B, title, image_name):
 
