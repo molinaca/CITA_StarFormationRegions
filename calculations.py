@@ -9,15 +9,17 @@ import matplotlib.pyplot as plt
 
 ## 1: Scientific Functions
 
-def get_temptracers_at_freq(nu, Tmap, normalize=True):
+def get_temptracers_at_freq(Tmap, nu=None, normalize=True, method='planck', limits=None):
     '''
     Function to find the temperatures at a frequency nu that will act as tracers for the RGB channels.
-    It does this by creating a function, currently this is the Planck Function
+    Includes different methods to do this. 
 
     Parameters:
-    nu: frequency in Hz
+    nu (optional): frequency in Hz used in planck method
     Tmap: temperature map in Kelvin
     normalize (optional): boolean to normalize the Planck function
+    method (optional): method to use to calculate the temperature tracers. Options are 'planck', 'custom'
+    limts (optional): limits for the custom method, of form [R_limit, G_limit]
 
     h: planck constant from constants.py
     c: speed of light from constants.py
@@ -27,15 +29,27 @@ def get_temptracers_at_freq(nu, Tmap, normalize=True):
     Output:
     rad : planck function at temperature in Tmap in units W/m^2/Hz/sr
     '''
-    x_d = h*nu/(k*Tmap)
-    rad = 2*h*nu**3/c**2/(np.exp(x_d)-1)
-    if normalize:
-        print("Normalizing by max")
-        freq_max = WiensLaw(Tmap)
-        x_d_max = h*freq_max/(k*Tmap)
-        rad_max = 2*h*freq_max**3/c**2/(np.exp(x_d_max)-1)
-        rad = rad/rad_max
-    return rad
+    if method == 'planck':
+        x_d = h*nu/(k*Tmap)
+        rad = 2*h*nu**3/c**2/(np.exp(x_d)-1)
+        if normalize:
+            print("Normalizing by max")
+            freq_max = WiensLaw(Tmap)
+            x_d_max = h*freq_max/(k*Tmap)
+            rad_max = 2*h*freq_max**3/c**2/(np.exp(x_d_max)-1)
+            rad = rad/rad_max
+        return rad 
+    
+    if method == 'custom':
+        R_limit, G_limit = limits
+
+        channel_1 = np.where(Tmap <R_limit, Tmap, 0.01)
+        channel_2 = np.where((Tmap >= R_limit) & (Tmap < G_limit), Tmap, 0.01)
+        channel_3 = np.where(Tmap >= G_limit, Tmap, 0.01)
+
+        channel_array = np.array([channel_1, channel_2, channel_3])
+        return channel_array
+
 
 #Wien's Law 
 def WiensLaw(T):
@@ -75,6 +89,26 @@ def increase_temp_res(data_dict, nside_new):
         Ts_new[ds_index] = hp.ud_grade(Ts[:,ds_index], nside_out=nside_new, order_in='NESTED', order_out='NESTED') 
 
     return Ts_new
+
+def custom_window_func(Tmap, R_limit, G_limit):
+    '''
+    Function used to just create custom windows for RGB in the temperature map. Creates a very stark contrast between the three channels.
+
+    Parameters: 
+    Tmap: temperature map, in form (distance_bin x pixel)
+    R_limit: limit for the red channel, in Kelvin
+    G_limit: limit for the green channel, in Kelvin
+
+    Output:
+    channel_array: array of shape (3 x distance_bin x pixel) containing the three channels
+    '''
+
+    channel_1 = np.where(Tmap <R_limit, Tmap, 0.01)
+    channel_2 = np.where((Tmap >= R_limit) & (Tmap < G_limit), Tmap, 0.01)
+    channel_3 = np.where(Tmap >= G_limit, Tmap, 0.01)
+
+    channel_array = np.array([channel_1, channel_2, channel_3])
+    return channel_array
 
 def multiply_dEBVandTtracer(data_dict, dEBVmap, tracermap, frequency):
     '''

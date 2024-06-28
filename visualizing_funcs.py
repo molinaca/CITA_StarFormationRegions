@@ -369,7 +369,7 @@ def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, im
         hp.gnomview(temptracer[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Temperature Tracer of {plot_title} at {frequency[f_index]} GHz', nest=True, min=None, max=None, unit=None , notext=True)
         plt.savefig(image_path + f"temptracer_{frequency[f_index]}.png")
         plt.close()
-        hp.gnomview(densxtemp[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title='Normalized $T$ Tracer and $E(B-V)$ ' + '\n' + f'of {plot_title} at {frequency[f_index]} GHz', nest=True, min = 0, max = 0.2, unit=None, notext=True)
+        hp.gnomview(densxtemp[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Normalized $T$ Tracer and $E(B-V)$ of {plot_title} at {frequency[f_index]} GHz', nest=True, min = 0, max = 0.2, unit=None, notext=True)
         plt.savefig(image_path + f"dxT_norm_{frequency[f_index]}.png")
         plt.close()
 
