@@ -7,7 +7,7 @@ import matplotlib.gridspec as gridspec
 import os
 from PIL import Image, ImageOps
 
-### 1: Healpy plotting functions
+## 1: Healpy plotting functions
 def plot_3D_temperature_slice_maps(data_dict):
 
     '''
@@ -75,7 +75,7 @@ def plot_map_region(map, distance, longitude, latitude, x, y, min_map, max_map, 
     '''
     hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, unit=unit_map, notext=True)
 
-### 2: Matplotlib plotting functions
+## 2: Matplotlib plotting functions
 def plot_RGB_histogram(R, G, B, title, image_name):
 
     '''
@@ -145,7 +145,60 @@ def plot_healpix_mollview(data, nside, pixel_index_array,total_sky_pixels,title,
     
     hp.mollview(plot_array,title=title,nest=nest,min=min,max=max,unit=unit)
 
-### 3: Getting Images
+### 2.1: Region plotting functions
+
+def overplot_regions_mollview(region_info, map, dist_slices):
+
+    '''
+    Function that overplots the maximum/center of the high_density regions over an hp.mollview map
+
+    Parameters:
+    region_info: list of lists of dictionaries, contains the center, pixel and pixel values for each region at each distance slice
+    map: np.array, map that regions will be plotted over in form (distance_slices, pixel)
+    dist_slices: int, number of distance slices
+
+    Output:
+    plots map and a scatter plot of the maximum of the regions at each distance slice
+    '''
+
+    for ds_index in range(dist_slices):
+        hp.mollview(map[ds_index], title=f'High density regions slice {ds_index}', nest=True, cbar=True)
+
+        #Make sure region_info exists
+        if region_info[ds_index]:
+            
+            region_centers = np.array([info['center'] for info in region_info[ds_index]])
+            hp.projscatter(region_centers[:, 0], region_centers[:, 1], s=8, marker='o', color='red')
+            plt.show()
+
+        else:
+            print(f"No high density regions at distance slice {dist_slices}")
+            plt.close()
+
+def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None, ysize=None ):
+
+    '''
+    Function that overplots region centers on a gnomview map. 
+
+    Parameters:
+    region_info (list of lists): list of lists of dictionaries containing information about regions.
+    map : np.array, map to plot
+    ds_index : int, index of distance slice
+    rot : tuple, center of map in (theta, phi) coordinates
+    title : str, title of plot
+    xsize (optional): int, size of x-axis in gnomview map
+    ysize (optional): int, size of y-axis in gnomview map
+
+    Returns:
+    plot of gnomview map with region centers overplotted
+    '''
+    region_centers = np.array([region['center'] for region in region_info[ds_index]])
+
+    hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize, nest=True, cbar=True, notext=True)
+    hp.projscatter(region_centers[:,0], region_centers[:,1], s=10, marker='o', color='red')
+    plt.show()
+    
+## 3: Getting Images
 def create_image(R, G, B):
     '''
     Function that when given R, G, B arrays that are already 2d and normalized, will create an image. 

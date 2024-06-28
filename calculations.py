@@ -9,6 +9,26 @@ import matplotlib.pyplot as plt
 
 ## 1: Scientific Functions
 
+#These are all functions that are used to portray scientific calculations. 
+
+#Wien's Law 
+def WiensLaw(T):
+    '''
+    Function that uses Wien's law to calculate the maximum frequency of a black body radiation curve at a given temperature
+
+    Parameters:
+    T: temperature in Kelvin
+    h: planck constant from constants.py
+    k: boltzmann constant from constants.py
+
+    Output:
+    nu_max: maximum frequency in Hz
+    '''
+    nu_max = 2.824*k*T/h
+    return nu_max
+
+## 2: Manipulating Arrays 
+
 def get_temptracers_at_freq(Tmap, nu=None, normalize=True, method='planck', limits=None):
     '''
     Function to find the temperatures at a frequency nu that will act as tracers for the RGB channels.
@@ -50,24 +70,6 @@ def get_temptracers_at_freq(Tmap, nu=None, normalize=True, method='planck', limi
         channel_array = np.array([channel_1, channel_2, channel_3])
         return channel_array
 
-
-#Wien's Law 
-def WiensLaw(T):
-    '''
-    Function that uses Wien's law to calculate the maximum frequency of a black body radiation curve at a given temperature
-
-    Parameters:
-    T: temperature in Kelvin
-    h: planck constant from constants.py
-    k: boltzmann constant from constants.py
-
-    Output:
-    nu_max: maximum frequency in Hz
-    '''
-    nu_max = 2.824*k*T/h
-    return nu_max
-
-## 2: Manipulating Arrays 
 def increase_temp_res(data_dict, nside_new):
     '''
     Function used to increase the resolution of the temperature map
@@ -215,6 +217,162 @@ def remove_tracers_in_mask(long, lat, distance_bins):
                 filtered_lat[ds_index].append(b)
         
     return filtered_long, filtered_lat
+
+### 2.2: Density variation functions
+
+def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, secondary_threshold, radius):
+    '''
+    Function that based on two thresholds, identifies which areas of the dust map have high dEBV (dust density). It saves these areas on their
+    own, which includes details about the region maximum, as well as a map with all the regions. 
+
+    Parameters:
+    nside: int, nside of dEBV map
+    dist_slices: int, number of distance slices
+    dEBV: np.array, dust map of form (distance_slices, pixel)
+    primary_threshold: float, threshold for high density regions
+    secondary_threshold: float, threshold for parts of the map that could still be in high density regions
+    radius: float, radius of region around pixel to look at, in degrees
+
+    Output:
+    region_info: list of lists of dictionaries, contains the maximum, pixel and pixel values for each region at each distance slice
+    high_density_map: np.array, map of all high density regions in form (distance_slices, pixel)
+    '''
+
+    #Make region_info list and high_density map    
+
+    region_info = [[] for i in range(dist_slices)]
+
+    high_density_map = np.zeros_like(dEBVmap)
+
+    for ds_index in range(dist_slices):
+        # Create a binary mask for high-density regions (True if high dEBV, false otherwise)
+
+        current_dEBV = dEBVmap[ds_index] #Define to make it easier
+
+        binary_mask = current_dEBV > primary_threshold #Pick highest density regions
+
+        # Only look at pixels where binary mask is True
+        pixels_to_check = np.where(binary_mask)[0]
+        checked_pixels = set() #Don't want to repeat same pixels
+
+        pixels_to_check = sorted(pixels_to_check, key=lambda p: current_dEBV[p], reverse=True)
+
+        for pixel in pixels_to_check:
+            if pixel not in checked_pixels: # If pixel has not been checked yet
+
+                #Make vector for pixel we're looking at
+                pixel_vec = hp.pix2vec(nside, pixel, nest=True)
+                
+                region = hp.query_disc(nside, pixel_vec, np.radians(radius), nest=True, inclusive=True) #pick region around pixel
+                region = [p for p in region if current_dEBV[p] > secondary_threshold] #make sure to only keep pixels within secondary threshold
+
+                #Makes sure to only do this if region is not empty
+                if region:
+                    
+                    # Mark the region in the map
+                    high_density_map[ds_index, region] = current_dEBV[region]
+                    checked_pixels.update(region) #update pixels that have been checked
+                    
+                    # Calculate the max because that is where regions will be "flagged" at
+                    max_dEBV_pixel = region[np.argmax(current_dEBV[region])]
+                    
+                    theta, phi = hp.pix2ang(nside, pixel, nest=True)#mark this pixel in the map
+                    
+                    #Add info to dictionary
+                    region_info[ds_index].append({
+                        'center': (theta, phi),
+                        'region_pixels': region,
+                        'region_dEBV': current_dEBV[region],
+                    })
+
+    return region_info, high_density_map
+
+def angular_distance(theta1, phi1, theta2, phi2):
+    """
+    Function to calculate the angular distance between two points on the sphere
+    
+    Parameters:
+    theta1, phi1: float, spherical coordinates of point 1 in radians
+    theta2, phi2: float, spherical coordinates of point 2 in radians
+
+    Output:
+    float, angular distance between the two points
+    """
+    dtheta = theta1 - theta2
+    dphi = np.abs(phi1 - phi2)
+    if dphi > np.pi:
+        dphi = 2 * np.pi - dphi
+    return np.sqrt(dtheta**2 + dphi**2)
+
+def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, radius = None, combine=False):
+
+    '''
+    Function that gets individual maps of each region, and has to option to filter regions around a point, and to combine all region maps
+    into one large map
+
+    Parameters:
+    region_info: list of lists of dictionaries, contains the center, pixel and pixel values for each region at each distance slice
+    nside: int, nside of dEBV map
+    ds_index: int, distance slice index
+    filter: bool, whether to filter regions around a point
+    rot (only if filter = True): tuple, (lon, lat) of point to filter around in degrees
+    radius (only if filter = True): float, radius around point to filter in radians
+    combine: bool, whether to combine all region maps into one large map
+
+    Output:
+    region_maps: list of np.arrays, contains individual region maps
+    combined_map: np.array, map of all regions combined, done if combine = True
+
+    '''
+
+    region_maps = [] #List of maps for each individual region
+    
+
+    infilter_count = 0 #Keep track of how many regions in filter
+
+    if filter == True:
+
+        print(rot) #center of region 
+
+        theta_filter, phi_filter = np.radians(90. - rot[1]), np.radians(rot[0]) #convert to theta phi
+
+    for region in region_info[ds_index]:
+
+        #get variables of region 
+        theta, phi = np.array(region['center'])
+        region_pixels = region['region_pixels']
+        region_dEBV = region['region_dEBV']
+
+        individ_map = np.zeros(hp.nside2npix(nside)) #Map for individual regions
+        individ_map[region_pixels] = region_dEBV
+
+        if filter == True:
+
+            dist = angular_distance(theta, phi, theta_filter, phi_filter) #get angular distance between region and point
+
+            if dist < radius:
+
+                region_maps.append(individ_map.copy()) #add to list if in filter
+                infilter_count += 1 #add to count
+
+            else:
+                continue
+
+        else:
+            print('Not filtering')
+            region_maps.append(individ_map.copy()) #if just want individual regions without filter
+
+    if filter == True:
+        print(f"Number of regions in filter: {infilter_count}")
+
+    #If want to make combined map
+    if combine == True:
+        combined_map = np.zeros(hp.nside2npix(nside))
+        for map in region_maps:
+            combined_map += map
+        return combined_map
+    
+    return region_maps    
 
 ## 3: Functions related to RGB
 def get_RGB(dens_temp):
