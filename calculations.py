@@ -220,7 +220,7 @@ def remove_tracers_in_mask(long, lat, distance_bins):
 
 ### 2.2: Density variation functions
 
-def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, secondary_threshold, radius):
+def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold, radius, lowtohigh=False):
     '''
     Function that based on two thresholds, identifies which areas of the dust map have high dEBV (dust density). It saves these areas on their
     own, which includes details about the region maximum, as well as a map with all the regions. 
@@ -228,7 +228,7 @@ def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, seconda
     Parameters:
     nside: int, nside of dEBV map
     dist_slices: int, number of distance slices
-    dEBV: np.array, dust map of form (distance_slices, pixel)
+    map: np.array, dust map of form (distance_slices, pixel)
     primary_threshold: float, threshold for high density regions
     secondary_threshold: float, threshold for parts of the map that could still be in high density regions
     radius: float, radius of region around pixel to look at, in degrees
@@ -242,20 +242,28 @@ def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, seconda
 
     region_info = [[] for i in range(dist_slices)]
 
-    high_density_map = np.zeros_like(dEBVmap)
+    high_density_map = np.zeros_like(map)
+
+    if lowtohigh == True:
+        reverse = False
+    else:
+        reverse = True
 
     for ds_index in range(dist_slices):
         # Create a binary mask for high-density regions (True if high dEBV, false otherwise)
 
-        current_dEBV = dEBVmap[ds_index] #Define to make it easier
+        current_map = map[ds_index] #Define to make it easier
 
-        binary_mask = current_dEBV > primary_threshold #Pick highest density regions
+        if lowtohigh == True:
+            binary_mask = current_map < primary_threshold
+        else:
+            binary_mask = current_map > primary_threshold #Pick highest density regions
 
         # Only look at pixels where binary mask is True
         pixels_to_check = np.where(binary_mask)[0]
         checked_pixels = set() #Don't want to repeat same pixels
 
-        pixels_to_check = sorted(pixels_to_check, key=lambda p: current_dEBV[p], reverse=True)
+        pixels_to_check = sorted(pixels_to_check, key=lambda p: current_map[p], reverse=reverse)
 
         for pixel in pixels_to_check:
             if pixel not in checked_pixels: # If pixel has not been checked yet
@@ -264,17 +272,21 @@ def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, seconda
                 pixel_vec = hp.pix2vec(nside, pixel, nest=True)
                 
                 region = hp.query_disc(nside, pixel_vec, np.radians(radius), nest=True, inclusive=True) #pick region around pixel
-                region = [p for p in region if current_dEBV[p] > secondary_threshold] #make sure to only keep pixels within secondary threshold
+                
+                if lowtohigh == True:
+                    region = [p for p in region if current_map[p] < secondary_threshold]
+                else:
+                    region = [p for p in region if current_map[p] > secondary_threshold] #make sure to only keep pixels within secondary threshold
 
                 #Makes sure to only do this if region is not empty
                 if region:
                     
                     # Mark the region in the map
-                    high_density_map[ds_index, region] = current_dEBV[region]
+                    high_density_map[ds_index, region] = current_map[region]
                     checked_pixels.update(region) #update pixels that have been checked
                     
                     # Calculate the max because that is where regions will be "flagged" at
-                    max_dEBV_pixel = region[np.argmax(current_dEBV[region])]
+                    max_dEBV_pixel = region[np.argmax(current_map[region])]
                     
                     theta, phi = hp.pix2ang(nside, pixel, nest=True)#mark this pixel in the map
                     
@@ -282,7 +294,7 @@ def get_highdEBV_regions(nside, dist_slices, dEBVmap, primary_threshold, seconda
                     region_info[ds_index].append({
                         'center': (theta, phi),
                         'region_pixels': region,
-                        'region_dEBV': current_dEBV[region],
+                        'region_values': current_map[region],
                     })
 
     return region_info, high_density_map
@@ -341,7 +353,7 @@ def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, ra
         #get variables of region 
         theta, phi = np.array(region['center'])
         region_pixels = region['region_pixels']
-        region_dEBV = region['region_dEBV']
+        region_dEBV = region['region_values']
 
         individ_map = np.zeros(hp.nside2npix(nside)) #Map for individual regions
         individ_map[region_pixels] = region_dEBV

@@ -175,7 +175,7 @@ def overplot_regions_mollview(region_info, map, dist_slices):
             print(f"No high density regions at distance slice {dist_slices}")
             plt.close()
 
-def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None, ysize=None ):
+def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None, ysize=None, unit=None, save=True, filename=None, show=False ):
 
     '''
     Function that overplots region centers on a gnomview map. 
@@ -188,15 +188,28 @@ def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None,
     title : str, title of plot
     xsize (optional): int, size of x-axis in gnomview map
     ysize (optional): int, size of y-axis in gnomview map
+    unit (optional): str, unit of map
+    save (optional): bool, default = True, if True, saves the plot
+    filename (optional): str, name of file to save plot, only use if save=True
+    show (optional): bool, default = False, if True, shows the plot
 
     Returns:
     plot of gnomview map with region centers overplotted
     '''
-    region_centers = np.array([region['center'] for region in region_info[ds_index]])
+    if region_info[ds_index]:
 
-    hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize, nest=True, cbar=True, notext=True)
-    hp.projscatter(region_centers[:,0], region_centers[:,1], s=10, marker='o', color='red')
-    plt.show()
+        region_centers = np.array([region['center'] for region in region_info[ds_index]])
+
+        hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize,unit=unit, nest=True, cbar=True, notext=True)
+        hp.projscatter(region_centers[:,0], region_centers[:,1], s=10, marker='o', color='red')
+        plt.legend(['Region Centers'])
+        if save == True:
+            plt.savefig(filename)
+
+        if show == True:
+            plt.show()
+        else:
+            plt.close()
     
 ## 3: Getting Images
 def create_image(R, G, B):
