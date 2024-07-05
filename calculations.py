@@ -27,29 +27,109 @@ def WiensLaw(T):
     nu_max = 2.824*k*T/h
     return nu_max
 
+def calculate_the_matching_FWHM(channel_midpoints, sigma_G):
+
+    '''
+    Calculate the full-width half-maximum (FWHM) of the gaussians required so that they cross over at 0.5 
+
+    Parameters:
+    channel_midpoints: midpoints of the channels in form [R, G, B]
+    sigma_G: sigma of the gaussian function for G
+
+    Output:
+    array: array of the standard deviations of the gaussians for [R, G, B]
+    '''
+
+    sigma0 = (channel_midpoints[1] - channel_midpoints[0]) / np.sqrt(2 * np.log(2)) - sigma_G
+    sigma1 = sigma_G
+    sigma2 = (channel_midpoints[2] - channel_midpoints[1]) /  np.sqrt(2 * np.log(2)) - sigma_G
+
+    return np.array([sigma0, sigma1, sigma2])
+
+def winged_gaussians(T, channel_midpoints, gaussian_widths):
+    """
+    Calculate the window function with multiple gaussins such that they go to 1 at low and high temperatures
+    and their FWHM overlap
+
+    Parameters:
+    T: temperature array, form (pixel), so should have loop outside of function for each distance slice
+    channel_midpoints: midpoints of the channels in form [R, G, B]
+    gaussian_widths: array of the standard deviations of the gaussians for [R, G, B]
+
+    Output:
+    channel_arrays: array of shape (3 x pixel) containing the gaussians of the three channels
+    """
+    n_channels = len(channel_midpoints)
+    channel_arrays = np.zeros(( n_channels, len(T)))
+
+    for channel_index in range(n_channels):
+        channel = np.exp(-0.5*(( T- channel_midpoints[channel_index])/gaussian_widths[channel_index])**2) #gaussian function
+        channel_arrays[channel_index] = channel
+
+    ### Make the lower temperature wing:
+    mask_lower = T < channel_midpoints[0]
+    channel_arrays[0][mask_lower] = 1
+    ### make the higher temperature wing:
+    mask_higher = T > channel_midpoints[2]
+    channel_arrays[2][mask_higher] = 1
+    return channel_arrays
+
+def calculate_the_matching_FWHM_winged(T,channel_midpoints, sigma_G):
+    '''
+    Calculates the FWHM from calculate_the_matching_FWHM and then uses winged_gaussians to calculate the winged gaussian
+
+    Parameters:
+    T: temperature array, form (pixel), so should have loop outside of function for each distance slice
+    channel_midpoints: midpoints of the channels in form [R, G, B]
+    sigma_G: sigma of the gaussian function for G
+
+    Output:
+    channel_arrays: array of shape (3 x pixel) containing the three channels
+    '''
+    gausian_width = calculate_the_matching_FWHM(channel_midpoints, sigma_G)
+    ### calculate the winged gaussian
+    channel_arrays = winged_gaussians(T, channel_midpoints, gausian_width)
+
+    return channel_arrays
+
 ## 2: Manipulating Arrays 
 
-def get_temptracers_at_freq(Tmap, nu=None, normalize=True, method='planck', limits=None):
+def get_temptracers_at_freq(Tmap, method='planck', nu=None, normalize=True, limits=None, midpoints=None, sigma_G=None):
     '''
     Function to find the temperatures at a frequency nu that will act as tracers for the RGB channels.
     Includes different methods to do this. 
 
     Parameters:
-    nu (optional): frequency in Hz used in planck method
     Tmap: temperature map in Kelvin
-    normalize (optional): boolean to normalize the Planck function
-    method (optional): method to use to calculate the temperature tracers. Options are 'planck', 'custom'
-    limts (optional): limits for the custom method, of form [R_limit, G_limit]
+    method (optional): method to use to calculate the temperature tracers. Options are 'planck', 'step' and 'gauss'
+        planck: uses the planck function to get B, can normalize function
+        step: creates windows for RGB based on limits using a step function
+        gauss: similar to step, but instead uses a gaussian function for smoother transitions
 
-    h: planck constant from constants.py
-    c: speed of light from constants.py
-    k: boltzmann constant from constants.py
-    x_d: variable used to simplify planck function
+        Planck parameters:
+        nu (optional): frequency in Hz used in planck method
+        normalize (optional): boolean to normalize the Planck function
+    
+        Step parameters:
+        limits (optional): limits for the custom method, of form [R_limit, G_limit]
+
+        Gauss parameters:
+        midpoints (optional): midpoints of temperature, used in gauss method
+        sigma_G (optional): sigma for gaussian function, used in gauss method
 
     Output:
-    rad : planck function at temperature in Tmap in units W/m^2/Hz/sr
+
+        Planck:
+        rad : planck function at temperature in Tmap in units W/m^2/Hz/sr
+
+        Step:
+        channel_arrays: array of shape (3 x distance_bin x pixel) containing the three channels
+
+        Gauss:
+        channel_arrays: array of shape (3 x pixel) containing the three channels
     '''
     if method == 'planck':
+        #h, c and k are from constants.py
         x_d = h*nu/(k*Tmap)
         rad = 2*h*nu**3/c**2/(np.exp(x_d)-1)
         if normalize:
@@ -60,15 +140,15 @@ def get_temptracers_at_freq(Tmap, nu=None, normalize=True, method='planck', limi
             rad = rad/rad_max
         return rad 
     
-    if method == 'custom':
-        R_limit, G_limit = limits
+    if method == 'step':
+        channel_arrays = custom_window_func(Tmap, limits[0],limits[1])
 
-        channel_1 = np.where(Tmap <R_limit, Tmap, 0.01)
-        channel_2 = np.where((Tmap >= R_limit) & (Tmap < G_limit), Tmap, 0.01)
-        channel_3 = np.where(Tmap >= G_limit, Tmap, 0.01)
+        return channel_arrays
+    
+    if method == 'gauss':
+        channel_arrays = calculate_the_matching_FWHM_winged(Tmap, midpoints, sigma_G)
 
-        channel_array = np.array([channel_1, channel_2, channel_3])
-        return channel_array
+        return channel_arrays
 
 def increase_temp_res(data_dict, nside_new):
     '''

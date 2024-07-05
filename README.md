@@ -82,7 +82,7 @@ Packages/Scripts Required:
 
 The notebook creates a new temperature only map with a higher resolution, then creates a planck function at 3 different frequencies (that will correspond to R, G and B). The planck function requires the script "constants.py". Then the new temperature emissivity (planck function) maps are multiplied by the dust density dEBV maps. From this, the R, G and B channels are extracted and used to create images for the whole sky, the Cepheus molecular cloud and the Orion A and B molecular clouds. 
 
-### flagging_properties.py
+### flagging_properties.ipynb
 
 Notebook that manually flags properties such as: Regions with high density, cold temperature (high in R channel), hot temperature (high in B channel), a mix of both hot and cold regions, and temperature gradient. It produces panels to provide a visualization of how well the flagging is working. 
 
