@@ -92,6 +92,41 @@ def calculate_the_matching_FWHM_winged(T,channel_midpoints, sigma_G):
 
     return channel_arrays
 
+def angular_distance(theta1, phi1, theta2, phi2):
+    '''
+    Calculate the angular distance between two points (theta, phi) in radians on a sphere. Vectorizes the angle and uses healpy's angdist function
+
+    Parameters:
+    theta1, phi1: angles of first point in radians
+    theta2, phi2: angles of second point in radians
+
+    Output:
+    distance: angular distance between the two points in radians
+    '''
+    vec1 = hp.ang2vec(theta1, phi1)
+    vec2 = hp.ang2vec(theta2, phi2)
+    distance = hp.rotator.angdist(vec1, vec2)
+    return distance
+
+#Take midpoint to be center of region with both
+def midpoint_spherical(theta1, phi1, theta2, phi2):
+    '''
+    Calculate the midpoint between two points (theta, phi) in radians on a sphere. Vectorizes the angle, calculates the midpoint
+    using numpy linear algebra, and then converts back to (theta, phi) using healpy's vec2ang function
+
+    Parameters:
+    theta1, phi1: angles of first point in radians
+    theta2, phi2: angles of second point in radians
+
+    Output:
+    theta_mid, phi_mid: angles of the midpoint in radians (given as hp.vec2ang(mid_vec))
+    '''
+    vec1 = hp.ang2vec(theta1, phi1)
+    vec2 = hp.ang2vec(theta2, phi2)
+    mid_vec = (vec1 + vec2) / np.linalg.norm(vec1 + vec2)
+    theta_mid, phi_mid = hp.vec2ang(mid_vec)
+    return theta_mid, phi_mid
+
 ## 2: Manipulating Arrays 
 
 def get_temptracers_at_freq(Tmap, method='planck', nu=None, normalize=True, limits=None, midpoints=None, sigma_G=None):
@@ -298,7 +333,52 @@ def remove_tracers_in_mask(long, lat, distance_bins):
         
     return filtered_long, filtered_lat
 
-### 2.2: Density variation functions
+def assign_distance_slice(data_dict, long, lat, distance):
+    '''
+    A function that assigns one of the distance slices from the 3D dust temperature map, to the position of each object. Based on the distance it checks to see in which slice it belongs and then makes a new array of the positions with their assigned distance slice. 
+
+    Parameters:
+        data_dict-------------------------------dictionary, dictionary of one of the 3D dust temperature maps
+        long------------------------------------array-like, longitude of the object in degrees
+        lat-------------------------------------array-like, latitude of an object in degrees
+        distance--------------------------------array-like, distance to object in kpc
+
+    Returns:
+        long_sliced-----------------------------array-like, longitude that now has an assigned distance slice
+        lat_sliced------------------------------array-like, latitude that now has an assigned distance slice
+        
+    '''
+    
+    distance_bins = data_dict["nr_of_distance_bins"]
+    distance_slices = data_dict["distance_slices"]
+    long_slice = [[] for i in range(distance_bins)] #Make empty array to store positions with distance slices
+    lat_slice = [[] for i in range(distance_bins)]
+    outofrange_count = 0 ##Adding a way to track how many distances are out of range
+
+    for idx, dist in enumerate(distance): #Do this for each distance value
+        found = False #Introduce flag to check if a distance was found
+        for ds_idx in range(distance_bins): #Check to see which distance slice sf distance is
+            if ds_idx ==0 and dist < distance_slices[0]: #Condition for first distance slice
+                long_slice[0].append(long[0])
+                lat_slice[0].append(lat[0])
+                found = True
+                break
+                  
+            elif ds_idx > 0 and distance_slices[ds_idx-1] <= dist <= distance_slices[ds_idx]: #Condition for all other distance slices
+                long_slice[ds_idx].append(long[idx])
+                lat_slice[ds_idx].append(lat[idx])
+                found = True
+                break
+        if found == False :
+            outofrange_count += 1 ##Add to counter
+
+    print(f"{outofrange_count} objects had distances out of range")
+                
+    return long_slice, lat_slice #Return "sliced" values
+            
+
+
+### 2.2: Density/Temperature variation functions
 
 def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold, radius, lowtohigh=False):
     '''
@@ -379,22 +459,20 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
 
     return region_info, high_density_map
 
-def angular_distance(theta1, phi1, theta2, phi2):
-    """
-    Function to calculate the angular distance between two points on the sphere
-    
-    Parameters:
-    theta1, phi1: float, spherical coordinates of point 1 in radians
-    theta2, phi2: float, spherical coordinates of point 2 in radians
+def find_close_RandB(blue_centers, red_centers, threshold):
 
-    Output:
-    float, angular distance between the two points
-    """
-    dtheta = theta1 - theta2
-    dphi = np.abs(phi1 - phi2)
-    if dphi > np.pi:
-        dphi = 2 * np.pi - dphi
-    return np.sqrt(dtheta**2 + dphi**2)
+    matched_regions_midpoints = []
+
+    for theta_blue, phi_blue in blue_centers:
+        for theta_red, phi_red in red_centers:
+            if angular_distance(theta_blue, phi_blue, theta_red, phi_red) <= threshold:
+                mid_theta, mid_phi = midpoint_spherical(theta_blue, phi_blue, theta_red, phi_red)
+                matched_regions_midpoints.append([float(mid_theta),float(mid_phi)])
+                #break #If you only want to add the midpoint once
+
+    matched_regions_midpoints = np.array(matched_regions_midpoints)
+
+    return matched_regions_midpoints
 
 def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, radius = None, combine=False):
 

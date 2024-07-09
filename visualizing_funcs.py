@@ -387,7 +387,7 @@ def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
 
     return R_uint, G_uint, B_uint, RGB_img
 
-def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, image_path):
+def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, image_path):
     '''
     Function to create a 5 x 3 panel of images of the Cepheus LMC region. The function first saves the images and then calls them when creating the panel.
     
@@ -469,3 +469,19 @@ def create_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, im
     plt.savefig(image_path + 'panel.png', facecolor='white', edgecolor='none')
 
     plt.show()
+
+def create_panel(size, figsize, path, images, title, filename = None):
+    panel, axs = plt.subplots(size[0], size[1], figsize=figsize)
+    axs = np.atleast_2d(axs) 
+
+    for i in range(size[0]):
+        for j in range(size[1]):
+            img = Image.open(path + f'/{images[i*size[1]+j]}.png')
+            axs[i,j].imshow(img)
+            axs[i,j].axis('off')
+
+    panel.suptitle(title, fontsize=18)
+    plt.tight_layout()     
+    if filename:
+        plt.savefig(filename)
+    plt.show() 
