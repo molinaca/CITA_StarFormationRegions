@@ -5,14 +5,11 @@ Repository containing all work done in the SURF program at CITA.
 
 Notes:
 
-    DataFiles contains all the csv files required in PlottingSFtracers.ipynb. Store these files in csv_files_path from settings so that it can be accessed. 
+- DataFiles contains all the csv files required in PlottingSFtracers.ipynb. Store these files in csv_files_path from settings so that it can be accessed. 
 
-    dustmap_cropped.png is required in comparison done in 2D_RGBmap.ipynb, but this is not necessary to actually make the images. 
+- dustmap_cropped.png is required in comparison done in 2D_RGBmap.ipynb, but this is not necessary to actually make the images. 
 
-Links for dust map data files:
-- Just temperature: https://drive.google.com/drive/folders/1p8obZbhzdD7jXnJdrFMKmNsVtnORwVfX?usp=sharing
-- All data: https://drive.google.com/drive/folders/1YqpCmRL_WVO6_sOpF-qEMW8C0rHvI_Mq?usp=sharing
-Ensure that it is stored in data_files_path from settings. 
+Links for data files can be obtain upon request from Ioana Zelko. Ensure that they are stored in data_files_path from settings. 
 
 ### Scripts
 Scripts containing functions and variables used in the notebooks in this repository
