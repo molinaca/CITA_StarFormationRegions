@@ -73,7 +73,11 @@ def plot_map_region(map, distance, longitude, latitude, x, y, min_map, max_map, 
     Output:
     A gnomview plot of the map at the specified region
     '''
-    hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, unit=unit_map, notext=True)
+    hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, 
+                cbar=True, unit=unit_map, notext=True)
+    plt.title(title_map, fontsize = 16)
+    cbar = plt.gcf().axes[-1]
+    cbar.tick_params(labelsize=15)  
 
 ## 2: Matplotlib plotting functions
 def plot_RGB_histogram(R, G, B, title, image_name):
@@ -99,10 +103,10 @@ def plot_RGB_histogram(R, G, B, title, image_name):
 
     plt.legend(loc='upper right')
     plt.yscale('log')
-    plt.xlabel('Color Depth')
-    plt.ylabel('Number of Pixels')
-    plt.title(title)
-    plt.savefig(image_name)
+    plt.xlabel('Color Depth', fontsize=14)
+    plt.ylabel('Number of Pixels', fontsize=14)
+    plt.title(title, fontsize = 16)
+    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
     plt.show()
 
 #Functions used to make declination mask for whole map
@@ -163,6 +167,7 @@ def overplot_regions_mollview(region_info, map, dist_slices):
 
     for ds_index in range(dist_slices):
         hp.mollview(map[ds_index], title=f'High density regions slice {ds_index}', nest=True, cbar=True)
+        plt.title(f'High density regions slice {ds_index}', fontsize = 16)
 
         #Make sure region_info exists
         if region_info[ds_index]:
@@ -201,10 +206,16 @@ def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None,
         region_centers = np.array([region['center'] for region in region_info[ds_index]])
 
         hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize,unit=unit, nest=True, cbar=True, notext=True)
-        hp.projscatter(region_centers[:,0], region_centers[:,1], s=10, marker='o', color='red')
-        plt.legend(['Region Centers'])
+        hp.projscatter(region_centers[:,0], region_centers[:,1], s=15, marker='o', color='red')
+        plt.legend(['Region Centers'], fontsize=12)
+        plt.title(title, fontsize = 16)
+
+        #Increase size of colorbar
+        cbar = plt.gcf().axes[-1]
+        cbar.tick_params(labelsize=15)
+
         if save == True:
-            plt.savefig(filename)
+            plt.savefig(filename, bbox_inches='tight', pad_inches=0.1)
 
         if show == True:
             plt.show()
@@ -281,7 +292,9 @@ def get_sky_image(data_dict, R, G, B, scale=True):
     for ds_index in range(dist_nslice):
 
         #Now make 2d for image purposes
-        R_array_2d = hp.mollview(R[ds_index], nest=True, return_projected_map=True, title="R Channel", cbar=False) #return_projected_map=True is what returns the 2d "array" needed
+        R_array_2d = hp.mollview(R[ds_index], nest=True, return_projected_map=True, title="R Channel", cbar=False) 
+        #return_projected_map=True is what returns the 2d "array" needed
+
         plt.close() #Close because actual image is not important
         G_array_2d = hp.mollview(G[ds_index], nest=True, return_projected_map=True, title="G Channel", cbar=False)
         plt.close()  
@@ -345,7 +358,9 @@ def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
 
     #Use hp.gnomview to get a 2d array of the region that will be used to create the image
 
-    R_2darray = hp.gnomview(R[dist], rot=(longitude,latitude), nest=True, xsize=x, ysize=y, return_projected_map=True) #return_projected_map=True is what returns the 2d "array" needed 
+    R_2darray = hp.gnomview(R[dist], rot=(longitude,latitude), nest=True, xsize=x, ysize=y, return_projected_map=True) 
+    #return_projected_map=True is what returns the 2d "array" needed 
+
     plt.close() #Close because actual image is not important
     G_2darray = hp.gnomview(G[dist], rot=(longitude,latitude), nest=True, xsize=x, ysize=y, return_projected_map=True)
     plt.close()
@@ -389,7 +404,8 @@ def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
 
 def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, image_path):
     '''
-    Function to create a 5 x 3 panel of images of the Cepheus LMC region. The function first saves the images and then calls them when creating the panel.
+    Function to create a 5 x 3 panel of images of the Cepheus LMC region. The function first saves the images and then calls them 
+    when creating the panel.
     
     The panel will contain the following images:
     - Original Temperature Map at nside 32
@@ -419,36 +435,78 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
     densxtemp = maps_dict["Normalized_denstemp"]
 
     ##First save images needed for the panel
-    hp.gnomview(Ts[:,dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'$T$ of {plot_title} with nside 32', nest=True,min=10,max=25, unit='K', notext=True)
+
+    #Can use plot_map_region for all of them except original temp map because format is pixel x distance 
+
+    #Parameters for plots
+    xsize = 2000
+    ysize = 2000
+    temp_min = 10
+    temp_max = 25
+    temp_unit = 'K'
+
+    #Temperature og
+    Ts_og_title = f'$T$ of {plot_title} with nside 32'
+    hp.gnomview(Ts[:,dist], rot=[longitude, latitude], xsize=xsize, ysize=ysize,title=Ts_og_title, nest=True,min=temp_min,max=temp_max, unit='K', 
+                notext=True)
+    cbar = plt.gcf().axes[-1] #make cbar larger, have to manually do this too
+    cbar.tick_params(labelsize=15)
+    plt.title(Ts_og_title, fontsize = 16)
     plt.savefig(image_path + "T_og.png")
     plt.close()
-    hp.gnomview(Ts_new[dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'$T$ of {plot_title} with nside 1024', nest=True,min=10,max=25, unit='K', notext=True)
+
+    #Temperature new
+    Ts_new_title = f'$T$ of {plot_title} with nside 1024'
+
+    plot_map_region(Ts_new, dist, longitude, latitude, xsize, ysize, temp_min, temp_max, Ts_new_title, temp_unit)
+    plt.title(Ts_new_title, fontsize = 16)
     plt.savefig(image_path + "T_new.png")
     plt.close()
-    hp.gnomview(dEBV[dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'$E(B-V)$ of {plot_title}', nest=True, max=1, notext=True)
+
+    #dEBV
+    dEBV_title = f'$E(B-V)$ of {plot_title}'
+    dEBV_bounds = [0, 1]
+    dEBV_unit = 'dEBV'
+    plot_map_region(dEBV, dist, longitude, latitude, xsize, ysize, dEBV_bounds[0], dEBV_bounds[1], dEBV_title, dEBV_unit)
+    plt.title(dEBV_title, fontsize = 16)
     plt.savefig(image_path + "dEBV.png")
     plt.close()
 
 
     for f_index in range(3):
     
-        hp.gnomview(temptracer[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Temperature Tracer of {plot_title} at {frequency[f_index]} GHz', nest=True, min=None, max=None, unit=None , notext=True)
+        #Temperature Tracer Map at each frequency (i.e Gaussian)
+        Ttracer_title = f'$T$ Tracer of {plot_title} at {frequency[f_index]} GHz'
+        Ttracer_bounds = [None, None]
+        Ttracer_unit = 'None'
+        plot_map_region(temptracer[f_index], dist, longitude, latitude, xsize, ysize, Ttracer_bounds[0], Ttracer_bounds[0], 
+                        Ttracer_title, Ttracer_unit )
+        plt.title(Ttracer_title, fontsize = 16)
         plt.savefig(image_path + f"temptracer_{frequency[f_index]}.png")
         plt.close()
-        hp.gnomview(densxtemp[f_index, dist], rot=[longitude, latitude], xsize=2000, ysize=2000,title=f'Normalized $T$ Tracer and $E(B-V)$ of {plot_title} at {frequency[f_index]} GHz', nest=True, min = 0, max = 0.2, unit=None, notext=True)
-        plt.savefig(image_path + f"dxT_norm_{frequency[f_index]}.png")
+
+        #Normalized Density x Temperature Map at each frequency
+        densxtemp_title = 'Normalized $T$ Tracer X $E(B-V)$ of' + '\n' + f' {plot_title} at {frequency[f_index]} GHz'
+        densxtemp_bounds = [0, 0.2]
+        densxtemp_unit = 'None'
+        plot_map_region(densxtemp[f_index], dist, longitude, latitude, xsize, ysize, densxtemp_bounds[0], densxtemp_bounds[1], 
+                        densxtemp_title, densxtemp_unit)
+        plt.title(densxtemp_title, fontsize = 16)
+        plt.savefig(image_path + f"dxT_norm_{frequency[f_index]}.png", bbox_inches='tight', pad_inches=0.1)
         plt.close()
 
     ##Now create the panel
     
 
     #Creating panel of images of Cepheus LMC
-    panel = plt.figure(figsize=(18, 34))
+    panel = plt.figure(figsize=(22, 34))
     gs = gridspec.GridSpec(5, 3, panel)
 
     #Get image paths and names to not repeat code
 
-    img_names = ['T_og', 'T_new', 'dEBV', f'temptracer_{frequency[0]}', f'temptracer_{frequency[1]}', f'temptracer_{frequency[2]}', f'dxT_norm_{frequency[0]}', f'dxT_norm_{frequency[1]}', f'dxT_norm_{frequency[2]}', 'R', 'G', 'B', 'rgb_hist_scaled', 'rgb_hist_ratios', 'rgb_scaled'] #array of names
+    img_names = ['T_og', 'T_new', 'dEBV', f'temptracer_{frequency[0]}', f'temptracer_{frequency[1]}', f'temptracer_{frequency[2]}', 
+                 f'dxT_norm_{frequency[0]}', f'dxT_norm_{frequency[1]}', f'dxT_norm_{frequency[2]}', 'R', 'G', 'B', 'rgb_hist_scaled', 
+                 'rgb_hist_ratios', 'rgb_scaled'] #array of names
 
     for i in range(5):  # Assuming 5 rows
         for j in range(3):  # Assuming 3 columns
@@ -461,10 +519,10 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
             plt.axis('off')  
 
             if img_names[img_index] == 'rgb_scaled': #This image has no title so have to manually add title
-                plt.title(f'RGB Image of {plot_title}')
+                plt.title(f'RGB Image of {plot_title}', fontsize = 16)
 
-    plt.subplots_adjust(wspace=0, hspace=0, top=0.97)
-    plt.suptitle(f'{plot_title} Panel')
+    plt.subplots_adjust(wspace=0.05, hspace=0.05, top=0.97)
+    plt.suptitle(f'{plot_title} Panel', fontsize = 18)
 
     plt.savefig(image_path + 'panel.png', facecolor='white', edgecolor='none')
 
@@ -479,9 +537,9 @@ def create_panel(size, figsize, path, images, title, filename = None):
             img = Image.open(path + f'/{images[i*size[1]+j]}.png')
             axs[i,j].imshow(img)
             axs[i,j].axis('off')
-
-    panel.suptitle(title, fontsize=18)
-    plt.tight_layout()     
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
+    panel.suptitle(title, fontsize=22)    
     if filename:
-        plt.savefig(filename)
+        plt.savefig(filename, bbox_inches='tight', pad_inches=0.1)
     plt.show() 

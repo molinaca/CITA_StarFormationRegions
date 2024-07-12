@@ -592,11 +592,11 @@ def get_rgb_ratios(R, G, B, title, image_name):
     plt.hist(ratio_RB, bins=30, color='indigo', alpha=0.5, label='R/B')
     plt.hist(ratio_GB, bins=30, color='turquoise', alpha=0.5, label='G/B')
     plt.yscale('log')
-    plt.xlabel('Color Depth Ratio')
-    plt.ylabel('Number of Pixels')
-    plt.title(title)
+    plt.xlabel('Color Depth Ratio', fontsize=14)
+    plt.ylabel('Number of Pixels', fontsize=14)
+    plt.title(title, fontsize = 16)
     plt.legend(loc='upper right')
-    plt.savefig(image_name)
+    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
     plt.show()
 
     return ratio_RG, ratio_RB, ratio_GB

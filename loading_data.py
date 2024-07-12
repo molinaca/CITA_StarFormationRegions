@@ -20,9 +20,9 @@ def load_just_temperature_data(file):
     '''
     A function that loads the 3D dust temperature map and returns a dictionary of the data. This dictionary contains the temperature, distance slices, the number of distance bins, the HEALPix resolution Nside, and the healpix ordering (nesting). 
     Parameters: 
-        file------------------------------hdf5 dust temperature file
+        file: hdf5 dust temperature file
     Returns:
-        data_dict-------------------------dictionary
+        data_dict: dictionary
 
     '''
     data_dict = {}
@@ -35,17 +35,17 @@ def load_just_temperature_data(file):
         g.close()
     return data_dict
 
-def load_sftracer(tracer_data):
+def get_tracer_positions(tracer_data):
     '''
     A function that loads the longitude, latitude and distance of a star formation tracer. It converts them from degrees to radians, and converts the latitude into colatitude. If no distance is found, the function only returns theta and phi. 
 
     Parameters: 
-        tracer_data-------------------------------pandas dataframe, must have a component 'l' and a component 'b', optionally can have 'D'
+        tracer_data: pandas dataframe, must have a component 'l' and a component 'b', optionally can have 'D'
 
     Returns:
-        long--------------------------------------array-like, longitude in degrees
-        lat---------------------------------------array-like, latitude in degrees
-        distance----------------------------------array-like, distance in kpc
+        long: array-like, longitude in degrees
+        lat: array-like, latitude in degrees
+        distance: array-like, distance in kpc
     '''
     long = tracer_data['l']
     lat = tracer_data['b']
