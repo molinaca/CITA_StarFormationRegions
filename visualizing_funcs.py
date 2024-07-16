@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 from PIL import Image, ImageOps
+import calculations as calc
 
 ## 1: Healpy plotting functions
 def plot_3D_temperature_slice_maps(data_dict):
@@ -54,7 +55,7 @@ def plot_map(data_dict, map, min_map, max_map, title_map, unit_map):
         hp.mollview(map[ds_index],title=f"{title_map} at distance slice "+str(ds_index) +\
                                         " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc",nest=True,min=min_map, max=max_map, unit=unit_map)
 
-def plot_map_region(map, distance, longitude, latitude, x, y, min_map, max_map, title_map, unit_map):
+def plot_map_region(map, distance, longitude, latitude, title_map, x=None, y=None, min_map=None, max_map=None, unit_map=None):
     '''
     Function used to plot a specific region of the map which requires hp.gnomview instead of hp.mollview. 
 
@@ -165,22 +166,23 @@ def overplot_regions_mollview(region_info, map, dist_slices):
     plots map and a scatter plot of the maximum of the regions at each distance slice
     '''
 
+    #Get centers of regions
+    region_centers = calc.get_region_centers(region_info, dist_slices)
+
     for ds_index in range(dist_slices):
         hp.mollview(map[ds_index], title=f'High density regions slice {ds_index}', nest=True, cbar=True)
         plt.title(f'High density regions slice {ds_index}', fontsize = 16)
 
         #Make sure region_info exists
-        if region_info[ds_index]:
-            
-            region_centers = np.array([info['center'] for info in region_info[ds_index]])
-            hp.projscatter(region_centers[:, 0], region_centers[:, 1], s=8, marker='o', color='red')
+        if region_centers[ds_index].size > 0:
+            hp.projscatter(region_centers[ds_index][:, 0], region_centers[ds_index][:, 1], s=8, marker='o', color='red')
             plt.show()
 
         else:
             print(f"No high density regions at distance slice {dist_slices}")
             plt.close()
 
-def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None, ysize=None, unit=None, save=True, filename=None, show=False ):
+def overplot_region_gnomview(region_centers, map, ds_index, rot, title, xsize=None, ysize=None, unit=None, save=True, filename=None, show=False ):
 
     '''
     Function that overplots region centers on a gnomview map. 
@@ -201,12 +203,13 @@ def overplot_region_gnomview(region_info, map, ds_index, rot, title, xsize=None,
     Returns:
     plot of gnomview map with region centers overplotted
     '''
-    if region_info[ds_index]:
+    #Get centers of regions
+    regions_atdist = region_centers[ds_index]
 
-        region_centers = np.array([region['center'] for region in region_info[ds_index]])
+    if regions_atdist.size > 0:
 
         hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize,unit=unit, nest=True, cbar=True, notext=True)
-        hp.projscatter(region_centers[:,0], region_centers[:,1], s=15, marker='o', color='red')
+        hp.projscatter(regions_atdist[:,0], regions_atdist[:,1], s=15, marker='o', color='red')
         plt.legend(['Region Centers'], fontsize=12)
         plt.title(title, fontsize = 16)
 
