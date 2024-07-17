@@ -2,6 +2,7 @@
 import numpy as np
 import ephem
 import healpy as hp
+from scipy.spatial import distance_matrix
 from constants import h, c, k
 import matplotlib.pyplot as plt
 
@@ -126,6 +127,25 @@ def midpoint_spherical(theta1, phi1, theta2, phi2):
     mid_vec = (vec1 + vec2) / np.linalg.norm(vec1 + vec2)
     theta_mid, phi_mid = hp.vec2ang(mid_vec)
     return theta_mid, phi_mid
+
+def convert_to_lonlat(theta, phi):
+
+    '''
+    Convert coordinates in (theta, phi) in radians, to (long, lat) in degrees
+
+    Parameters:
+    theta: array-like, colatitude in radians
+    phi: array-like, longitude in radians
+
+    Output: 
+    long: array-like, longitude in degrees
+    lat: array-like, latitude in degrees
+    '''
+
+    long = np.degrees(phi)
+    lat = 90 - np.degrees(theta)
+    
+    return long, lat
 
 ## 2: Manipulating Arrays 
 
@@ -474,6 +494,28 @@ def find_close_RandB(blue_centers, red_centers, threshold):
 
     return matched_regions_midpoints
 
+def get_region_centers(region_info, n_dist_slices):
+
+    '''
+    Get the center (theta, phi) in radians of each region at each distance slice.
+
+    Parameters:
+    region_info: list of lists of dictionaries, contains the center, pixel and pixel values for each region at each distance slice
+    n_dist_slices: int, number of distance slices
+
+    Output:
+    region_centers: list of np.arrays at each distance slice, contains the center of each region in the form (theta, phi) in radians
+    '''
+
+    region_centers = []
+
+    for ds_index in range(n_dist_slices):
+    
+        center = np.array([region['center'] for region in region_info[ds_index]])
+        region_centers.append(center)
+
+    return region_centers
+
 def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, radius = None, combine=False):
 
     '''
@@ -542,7 +584,108 @@ def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, ra
             combined_map += map
         return combined_map
     
-    return region_maps    
+    return region_maps 
+
+def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
+
+    '''
+    Groups regions (for my purposes neighbouring hot and cold regions) that are within a distance threshold of eachother. It will output the
+    centers of these groups in the form of an array at each distance slice.
+
+    Parameters:
+    coords: list of arrays, each array contains coordinates of regions at a distance slice (in form [dist_slice][region][theta, phi])
+    distance_threshold: float, distance threshold for points to be considered close to eachother
+    n_distslices: int, number of distance slices
+    lonlat: bool, if True, coordinates are in (long, lat) instead of (theta, phi)
+
+    Output:
+    group_centroids: list of arrays, each array contains the centroids of the groups of regions at each distance slice
+    '''
+
+    #Initialize list to store group centroids
+
+    threshold = distance_threshold
+    group_centroids = [[] for i in range(n_distslices)]
+
+    #Want to calculate centroid of all regions at each distance slice so iterate over them
+
+    for ds_index in range(n_distslices):
+
+        #Get current coordinates and calculate the distance between each point using distance_matrix
+
+        current_coords = coords[ds_index]
+
+        dist_matrix = distance_matrix(current_coords, current_coords)
+
+        #Get long, lat to make coords_array with them
+
+        if lonlat == False:
+
+            theta, phi = current_coords[:,0], current_coords[:,1]
+
+            long, lat = convert_to_lonlat(theta, phi)
+
+        elif lonlat == True:
+
+            long, lat = current_coords[:,0], current_coords[:,1]
+
+        coords_array = np.column_stack((long, lat))
+
+        #Create groups based on whether they are within the distance threshold of eachother
+
+        groups = []
+
+        for i in range(len(coords_array)):
+            #Get point i, make group with it, and then for each j that is within the threshold, add it to the group, then make it a set
+            group = [i]
+            for j in range(len(coords_array)):
+                if i != j and dist_matrix[i, j] < threshold:
+                    group.append(j)
+            groups.append(set(group))
+
+        #Now want to merge any groups that intersect
+        
+        merged_groups = []
+
+        #While loop will start with first group until no groups left
+        while groups:
+
+            #Get first group in list, and assign rest to 'rest', make the first set 
+
+            first, *rest = groups
+            first = set(first)
+            lf = -1 #This is initialized in each loop, will keep track of length of first set
+
+            #The length of the first set will increase as we merge groups, as long as still merging loop will continue
+            while len(first) > lf:
+                lf = len(first) #keeps track of length, at some point will be equal to len(first) and loop will stop
+                rest2 = [] #where groups that do not intersect are stored
+
+                #Iterate through regions in rest and check if they intersect, if they do merge them
+                for r in rest:
+                    if first.intersection(r):
+                        first |= r
+                    else:
+                        rest2.append(r) #if not in intersection add to rest2
+                #Make rest2 new rest        
+                rest = rest2
+            #Append merged first set to merged groups, and make new groups the rest of the sets
+            merged_groups.append(first)
+            groups = rest
+
+        #Now calculate the centroid of each group
+        centroids_atdist = []
+        for group in merged_groups:
+            group_coords = coords_array[list(group)] #Get group coords 
+            centroid = np.mean(group_coords, axis=0)
+            centroids_atdist.append(centroid) #append to list
+        
+        #Now add centroids to group_centroids
+        centroids_atdist = np.array(centroids_atdist)
+        group_centroids[ds_index] = centroids_atdist
+        
+    return group_centroids
+
 
 ## 3: Functions related to RGB
 def get_RGB(dens_temp):
