@@ -3,16 +3,15 @@ import numpy as np
 import ephem
 import healpy as hp
 from scipy.spatial import distance_matrix
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 from constants import h, c, k
 import matplotlib.pyplot as plt
 
 
 
-## 1: Scientific Functions
-
-#These are all functions that are used to portray scientific calculations. 
-
-#Wien's Law 
+## 1: General Functions
+### 1.1: Calculations
 def WiensLaw(T):
     '''
     Function that uses Wien's law to calculate the maximum frequency of a black body radiation curve at a given temperature
@@ -27,6 +26,75 @@ def WiensLaw(T):
     '''
     nu_max = 2.824*k*T/h
     return nu_max
+
+def angular_distance(theta1, phi1, theta2, phi2):
+    '''
+    Calculate the angular distance between two points (theta, phi) in radians on a sphere. Vectorizes the angle and uses healpy's angdist function
+
+    Parameters:
+    theta1, phi1: angles of first point in radians
+    theta2, phi2: angles of second point in radians
+
+    Output:
+    distance: angular distance between the two points in radians
+    '''
+    vec1 = hp.ang2vec(theta1, phi1)
+    vec2 = hp.ang2vec(theta2, phi2)
+    distance = hp.rotator.angdist(vec1, vec2)
+    return distance
+
+#Take midpoint to be center of region with both
+def midpoint_spherical(theta1, phi1, theta2, phi2):
+    '''
+    Calculate the midpoint between two points (theta, phi) in radians on a sphere. Vectorizes the angle, calculates the midpoint
+    using numpy linear algebra, and then converts back to (theta, phi) using healpy's vec2ang function
+
+    Parameters:
+    theta1, phi1: angles of first point in radians
+    theta2, phi2: angles of second point in radians
+
+    Output:
+    theta_mid, phi_mid: angles of the midpoint in radians (given as hp.vec2ang(mid_vec))
+    '''
+    vec1 = hp.ang2vec(theta1, phi1)
+    vec2 = hp.ang2vec(theta2, phi2)
+    mid_vec = (vec1 + vec2) / np.linalg.norm(vec1 + vec2)
+    theta_mid, phi_mid = hp.vec2ang(mid_vec)
+    return theta_mid, phi_mid
+
+### 1.2: Conversions
+
+def convert_to_lonlat(theta, phi):
+
+    '''
+    Convert coordinates in (theta, phi) in radians, to (long, lat) in degrees
+
+    Parameters:
+    theta: array-like, colatitude in radians
+    phi: array-like, longitude in radians
+
+    Output: 
+    long: array-like, longitude in degrees
+    lat: array-like, latitude in degrees
+    '''
+
+    long = np.degrees(phi)
+    lat = 90 - np.degrees(theta)
+    
+    return long, lat
+
+def eq_to_gal(ra, dec):
+    coord = SkyCoord(ra=ra*u.degree, dec=dec*u.degree, frame='icrs')
+    gal_coord = coord.transform_to('galactic')
+    return gal_coord.l.degree, gal_coord.b.degree
+
+def gal_to_eq(l, b):
+    coord = SkyCoord(l=l*u.degree, b=b*u.degree, frame='galactic')
+    eq_coord = coord.transform_to('icrs')
+    return eq_coord.ra.degree, eq_coord.dec.degree
+
+## 2: Temperature and dEBV Map Manipulation
+### 2.1: Functions for getting temperature tracers
 
 def calculate_the_matching_FWHM(channel_midpoints, sigma_G):
 
@@ -93,61 +161,25 @@ def calculate_the_matching_FWHM_winged(T,channel_midpoints, sigma_G):
 
     return channel_arrays
 
-def angular_distance(theta1, phi1, theta2, phi2):
+def custom_window_func(Tmap, R_limit, G_limit):
     '''
-    Calculate the angular distance between two points (theta, phi) in radians on a sphere. Vectorizes the angle and uses healpy's angdist function
+    Function used to just create custom windows for RGB in the temperature map. Creates a very stark contrast between the three channels.
 
-    Parameters:
-    theta1, phi1: angles of first point in radians
-    theta2, phi2: angles of second point in radians
+    Parameters: 
+    Tmap: temperature map, in form (distance_bin x pixel)
+    R_limit: limit for the red channel, in Kelvin
+    G_limit: limit for the green channel, in Kelvin
 
     Output:
-    distance: angular distance between the two points in radians
-    '''
-    vec1 = hp.ang2vec(theta1, phi1)
-    vec2 = hp.ang2vec(theta2, phi2)
-    distance = hp.rotator.angdist(vec1, vec2)
-    return distance
-
-#Take midpoint to be center of region with both
-def midpoint_spherical(theta1, phi1, theta2, phi2):
-    '''
-    Calculate the midpoint between two points (theta, phi) in radians on a sphere. Vectorizes the angle, calculates the midpoint
-    using numpy linear algebra, and then converts back to (theta, phi) using healpy's vec2ang function
-
-    Parameters:
-    theta1, phi1: angles of first point in radians
-    theta2, phi2: angles of second point in radians
-
-    Output:
-    theta_mid, phi_mid: angles of the midpoint in radians (given as hp.vec2ang(mid_vec))
-    '''
-    vec1 = hp.ang2vec(theta1, phi1)
-    vec2 = hp.ang2vec(theta2, phi2)
-    mid_vec = (vec1 + vec2) / np.linalg.norm(vec1 + vec2)
-    theta_mid, phi_mid = hp.vec2ang(mid_vec)
-    return theta_mid, phi_mid
-
-def convert_to_lonlat(theta, phi):
-
-    '''
-    Convert coordinates in (theta, phi) in radians, to (long, lat) in degrees
-
-    Parameters:
-    theta: array-like, colatitude in radians
-    phi: array-like, longitude in radians
-
-    Output: 
-    long: array-like, longitude in degrees
-    lat: array-like, latitude in degrees
+    channel_array: array of shape (3 x distance_bin x pixel) containing the three channels
     '''
 
-    long = np.degrees(phi)
-    lat = 90 - np.degrees(theta)
-    
-    return long, lat
+    channel_1 = np.where(Tmap <R_limit, Tmap, 0.01)
+    channel_2 = np.where((Tmap >= R_limit) & (Tmap < G_limit), Tmap, 0.01)
+    channel_3 = np.where(Tmap >= G_limit, Tmap, 0.01)
 
-## 2: Manipulating Arrays 
+    channel_array = np.array([channel_1, channel_2, channel_3])
+    return channel_array
 
 def get_temptracers_at_freq(Tmap, method='planck', nu=None, normalize=True, limits=None, midpoints=None, sigma_G=None):
     '''
@@ -227,25 +259,7 @@ def increase_temp_res(data_dict, nside_new):
 
     return Ts_new
 
-def custom_window_func(Tmap, R_limit, G_limit):
-    '''
-    Function used to just create custom windows for RGB in the temperature map. Creates a very stark contrast between the three channels.
-
-    Parameters: 
-    Tmap: temperature map, in form (distance_bin x pixel)
-    R_limit: limit for the red channel, in Kelvin
-    G_limit: limit for the green channel, in Kelvin
-
-    Output:
-    channel_array: array of shape (3 x distance_bin x pixel) containing the three channels
-    '''
-
-    channel_1 = np.where(Tmap <R_limit, Tmap, 0.01)
-    channel_2 = np.where((Tmap >= R_limit) & (Tmap < G_limit), Tmap, 0.01)
-    channel_3 = np.where(Tmap >= G_limit, Tmap, 0.01)
-
-    channel_array = np.array([channel_1, channel_2, channel_3])
-    return channel_array
+### 2.2: dEBV and Temperature
 
 def multiply_dEBVandTtracer(data_dict, dEBVmap, tracermap, frequency):
     '''
@@ -308,7 +322,8 @@ def normalize_multiplied_array(data_dict, dens_temp, frequency):
 
     return dens_temp_norm
 
-### 2.1: Functions for sf tracers
+## 3: Star Formation Tracers Functions
+
 def remove_tracers_in_mask(long, lat, distance_bins):
     '''
     Function that removes any tracers that are within the declination mask (any dec < -30 degrees). It will output new, filtered arrays. 
@@ -396,9 +411,84 @@ def assign_distance_slice(data_dict, long, lat, distance):
                 
     return long_slice, lat_slice #Return "sliced" values
             
+## 4: Functions for RGB and Imaging
+def get_RGB(dens_temp):
+    '''
+    Function that gets the R, G and B color channels from the normalized map of dust density and temperature emission. It also scales the values
+    so that they're in between 0 and 255 (uint8).
+
+    Parameters:
+    dens_temp: normalized map of shape (frequency x distance_bin x pixel) containing the multiplication of dEBV and B
+
+    Output:
+    R, G, B: arrays of type uint8 containing the R, G and B color channels.
+    '''
+    nslices = dens_temp.shape[1]
+    pixels = dens_temp.shape[2]
+    max_pixel = 255 #maximum value allowed in an image
+    
+
+    R_array = np.zeros((nslices, pixels))
+    G_array = np.zeros((nslices, pixels))
+    B_array = np.zeros((nslices, pixels))
+
+    for ds_index in range(nslices):
+        R_array[ds_index] = dens_temp[0, ds_index] #Choose channel based on frequency of dens_temp
+        G_array[ds_index] = dens_temp[1, ds_index]
+        B_array[ds_index] = dens_temp[2, ds_index]
+
+    #Make it so that its in between 0 and 255 and convert to uint8
+    R = (R_array*max_pixel).astype(np.uint8) 
+    G = (G_array*max_pixel).astype(np.uint8)
+    B = (B_array*max_pixel).astype(np.uint8)
+
+    return R, G, B
 
 
-### 2.2: Density/Temperature variation functions
+def get_rgb_ratios(R, G, B, title, image_name):
+
+    R_flat = R.flatten()
+    G_flat = G.flatten()
+    B_flat = B.flatten()
+
+    ratio_RG = np.divide(R_flat, G_flat, where=G_flat!=0)
+    ratio_RB = np.divide(R_flat, B_flat, where=B_flat!=0)
+    ratio_GB = np.divide(G_flat, B_flat, where=B_flat!=0)
+
+    plt.hist(ratio_RG, bins=30, color='olive', alpha=0.5, label='R/G')
+    plt.hist(ratio_RB, bins=30, color='indigo', alpha=0.5, label='R/B')
+    plt.hist(ratio_GB, bins=30, color='turquoise', alpha=0.5, label='G/B')
+    plt.yscale('log')
+    plt.xlabel('Color Depth Ratio', fontsize=14)
+    plt.ylabel('Number of Pixels', fontsize=14)
+    plt.title(title, fontsize = 16)
+    plt.legend(loc='upper right')
+    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
+    plt.show()
+
+    return ratio_RG, ratio_RB, ratio_GB
+
+def get_rgb_roi(R, G, B, x, y, w, h):
+    '''
+    Function that gets the RGB values of a region of interest (roi) in an image
+
+    Parameters:
+    R, G, B : 2d numpy arrays that are from 0 to 255
+    x, y : coordinates of the top left corner of the roi
+    w, h : width and height of the roi
+
+    Returns:
+    R_roi, G_roi, B_roi : 2d numpy arrays of the roi
+    '''
+    R_roi = R[y:y+h, x:x+w]
+    G_roi = G[y:y+h, x:x+w]
+    B_roi = B[y:y+h, x:x+w]
+
+    return R_roi, G_roi, B_roi
+    
+           
+## 5: Flagging Regions with Certain Properties
+### 5.1 : Getting Regions and Maps
 
 def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold, radius, lowtohigh=False):
     '''
@@ -478,21 +568,6 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
                     })
 
     return region_info, high_density_map
-
-def find_close_RandB(blue_centers, red_centers, threshold):
-
-    matched_regions_midpoints = []
-
-    for theta_blue, phi_blue in blue_centers:
-        for theta_red, phi_red in red_centers:
-            if angular_distance(theta_blue, phi_blue, theta_red, phi_red) <= threshold:
-                mid_theta, mid_phi = midpoint_spherical(theta_blue, phi_blue, theta_red, phi_red)
-                matched_regions_midpoints.append([float(mid_theta),float(mid_phi)])
-                #break #If you only want to add the midpoint once
-
-    matched_regions_midpoints = np.array(matched_regions_midpoints)
-
-    return matched_regions_midpoints
 
 def get_region_centers(region_info, n_dist_slices):
 
@@ -585,6 +660,23 @@ def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, ra
         return combined_map
     
     return region_maps 
+
+def find_close_RandB(blue_centers, red_centers, threshold):
+
+    matched_regions_midpoints = []
+
+    for theta_blue, phi_blue in blue_centers:
+        for theta_red, phi_red in red_centers:
+            if angular_distance(theta_blue, phi_blue, theta_red, phi_red) <= threshold:
+                mid_theta, mid_phi = midpoint_spherical(theta_blue, phi_blue, theta_red, phi_red)
+                matched_regions_midpoints.append([float(mid_theta),float(mid_phi)])
+                #break #If you only want to add the midpoint once
+
+    matched_regions_midpoints = np.array(matched_regions_midpoints)
+
+    return matched_regions_midpoints
+
+### 5.2: Looking at Features
 
 def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
 
@@ -687,80 +779,4 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
     return group_centroids
 
 
-## 3: Functions related to RGB
-def get_RGB(dens_temp):
-    '''
-    Function that gets the R, G and B color channels from the normalized map of dust density and temperature emission. It also scales the values
-    so that they're in between 0 and 255 (uint8).
-
-    Parameters:
-    dens_temp: normalized map of shape (frequency x distance_bin x pixel) containing the multiplication of dEBV and B
-
-    Output:
-    R, G, B: arrays of type uint8 containing the R, G and B color channels.
-    '''
-    nslices = dens_temp.shape[1]
-    pixels = dens_temp.shape[2]
-    max_pixel = 255 #maximum value allowed in an image
-    
-
-    R_array = np.zeros((nslices, pixels))
-    G_array = np.zeros((nslices, pixels))
-    B_array = np.zeros((nslices, pixels))
-
-    for ds_index in range(nslices):
-        R_array[ds_index] = dens_temp[0, ds_index] #Choose channel based on frequency of dens_temp
-        G_array[ds_index] = dens_temp[1, ds_index]
-        B_array[ds_index] = dens_temp[2, ds_index]
-
-    #Make it so that its in between 0 and 255 and convert to uint8
-    R = (R_array*max_pixel).astype(np.uint8) 
-    G = (G_array*max_pixel).astype(np.uint8)
-    B = (B_array*max_pixel).astype(np.uint8)
-
-    return R, G, B
-
-
-def get_rgb_ratios(R, G, B, title, image_name):
-
-    R_flat = R.flatten()
-    G_flat = G.flatten()
-    B_flat = B.flatten()
-
-    ratio_RG = np.divide(R_flat, G_flat, where=G_flat!=0)
-    ratio_RB = np.divide(R_flat, B_flat, where=B_flat!=0)
-    ratio_GB = np.divide(G_flat, B_flat, where=B_flat!=0)
-
-    plt.hist(ratio_RG, bins=30, color='olive', alpha=0.5, label='R/G')
-    plt.hist(ratio_RB, bins=30, color='indigo', alpha=0.5, label='R/B')
-    plt.hist(ratio_GB, bins=30, color='turquoise', alpha=0.5, label='G/B')
-    plt.yscale('log')
-    plt.xlabel('Color Depth Ratio', fontsize=14)
-    plt.ylabel('Number of Pixels', fontsize=14)
-    plt.title(title, fontsize = 16)
-    plt.legend(loc='upper right')
-    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
-    plt.show()
-
-    return ratio_RG, ratio_RB, ratio_GB
-
-def get_rgb_roi(R, G, B, x, y, w, h):
-    '''
-    Function that gets the RGB values of a region of interest (roi) in an image
-
-    Parameters:
-    R, G, B : 2d numpy arrays that are from 0 to 255
-    x, y : coordinates of the top left corner of the roi
-    w, h : width and height of the roi
-
-    Returns:
-    R_roi, G_roi, B_roi : 2d numpy arrays of the roi
-    '''
-    R_roi = R[y:y+h, x:x+w]
-    G_roi = G[y:y+h, x:x+w]
-    B_roi = B[y:y+h, x:x+w]
-
-    return R_roi, G_roi, B_roi
-    
-           
     

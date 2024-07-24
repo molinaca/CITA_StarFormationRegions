@@ -8,31 +8,10 @@ import os
 from PIL import Image, ImageOps
 import calculations as calc
 
-## 1: Healpy plotting functions
-def plot_3D_temperature_slice_maps(data_dict):
+## 1: General Plotting Functions:
 
-    '''
-    Function to ONLY plot the original temperature map of shape (pixel x distance_bin) at each distance slice
-    '''
-    Ts = data_dict['temperatures']
-    model_nslices = data_dict["nr_of_distance_bins"]
-    model_dist_slices = data_dict["distance_slices"]
-    for ds_index in range(model_nslices):                                 
-        hp.mollview(Ts[:,ds_index],title=r"$T$ at distance slice "+str(ds_index) +\
-                                   " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc",nest=True,min=10,max=25, unit='K')
-        #plt.savefig("T_128_"+str(ds_index)+".png")
-
-def plot_dEBV(data_dict):
-    """ Plot the reddening in each distance bin
-    """ 
-    dEBV = data_dict["dEBV"]
-    model_nslices = data_dict["nr_of_distance_bins"]
-    model_dist_slices = data_dict["distance_slices"]
-    for ds_index in range(model_nslices):
-        hp.mollview(dEBV[ds_index], title="Differential E(B-V) at distance slice "+str(ds_index) +\
-                     " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc", nest=True, max=1)
-        
-def plot_map(data_dict, map, min_map, max_map, title_map, unit_map):
+### 1.1: Healpy 
+def plot_map(data_dict, map, min_map, max_map, title_map, unit_map, nside, declination_mask = False):
     """ 
     Function to plot any map of the whole sky as long as it has the form distance bin x pixel
 
@@ -49,68 +28,30 @@ def plot_map(data_dict, map, min_map, max_map, title_map, unit_map):
     """ 
     model_nslices = data_dict["nr_of_distance_bins"]
     model_dist_slices = data_dict["distance_slices"]
+    npix = hp.nside2npix(nside)
+    pixel_index_array = np.arange(npix)
 
     for ds_index in range(model_nslices):
+
+        map_title = f"{title_map} at distance slice "+str(ds_index) +\
+                                        " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc"
         
-        hp.mollview(map[ds_index],title=f"{title_map} at distance slice "+str(ds_index) +\
-                                        " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc",nest=True,min=min_map, max=max_map, unit=unit_map)
+        plot_array = np.zeros(npix)
 
-def plot_map_region(map, distance, longitude, latitude, title_map, x=None, y=None, min_map=None, max_map=None, unit_map=None):
-    '''
-    Function used to plot a specific region of the map which requires hp.gnomview instead of hp.mollview. 
+        if declination_mask ==True:
+            dec = create_declination_mask(nside)
+            data_masked = map[ds_index].copy()
+            data_masked[dec<-30]=hp.UNSEEN
+            plot_array[pixel_index_array]=data_masked
 
-    Parameters:
-    map: map to be plotted with shape (distance_bin x pixel) so if it has freq have to select freq before
-    distance: int, distance slice to be plotted
-    longitude: float, longitude (degrees) of the centre of the region to be plotted
-    latitude: float, latitude (degrees) of the centre of the region to be plotted
-    x: int, size of the x axis of plot
-    y: int, size of the y axis of plot
-    min_map: float, minimum color value of the map
-    max_map: float, maximum color value of the map
-    title_map: string, title of the plot
-    unit_map: string, unit of the map
+        else:
+            plot_array[pixel_index_array]=map[ds_index]
+            
+        hp.mollview(plot_array, title = map_title,nest=True, min=min_map, max=max_map, unit=unit_map)
+        plt.title(map_title, fontsize = 16)
+        cbar = plt.gcf().axes[-1]
+        cbar.tick_params(labelsize=15) 
 
-    Output:
-    A gnomview plot of the map at the specified region
-    '''
-    hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, 
-                cbar=True, unit=unit_map, notext=True)
-    plt.title(title_map, fontsize = 16)
-    cbar = plt.gcf().axes[-1]
-    cbar.tick_params(labelsize=15)  
-
-## 2: Matplotlib plotting functions
-def plot_RGB_histogram(R, G, B, title, image_name):
-
-    '''
-    Function to create of plot of histograms of the color depth of the RGB channels of an image. 
-
-    Parameters:
-    R, G, B: numpy arrays, the RGB channels of the image
-    title: string, title of the plot
-    image_name: string, name of the image to be saved that should include the path
-
-    Output:
-    A single histogram with the color depth of the RGB channels of the image
-    '''
-        
-    #Plot R
-    plt.hist(R.flatten(), bins=50, color='red', alpha=0.5, label='R') #arrays are 2d so we need to flatten them
-    #Plot G
-    plt.hist(G.flatten(), bins=50, color='green', alpha=0.5, label='G')
-    #Plot B
-    plt.hist(B.flatten(), bins=50, color='blue', alpha=0.5, label='B')
-
-    plt.legend(loc='upper right')
-    plt.yscale('log')
-    plt.xlabel('Color Depth', fontsize=14)
-    plt.ylabel('Number of Pixels', fontsize=14)
-    plt.title(title, fontsize = 16)
-    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
-    plt.show()
-
-#Functions used to make declination mask for whole map
 def create_declination_mask(nside, nested=True):
         ### mask the map at np.abs(declinations) larger than 30
         ### we used nested data sets in this analysis
@@ -134,23 +75,115 @@ def create_declination_mask(nside, nested=True):
             #print('%.13f %.13f' % (equatorial.ra/np.pi*180.0, equatorial.dec/np.pi*180.0))
         return dec
 
+        
+def plot_map_region(map, distance, longitude, latitude, title_map, x=None, y=None, min_map=None, max_map=None, unit_map=None):
+    '''
+    Function used to plot a specific region of the map which requires hp.gnomview instead of hp.mollview. 
 
-def plot_healpix_mollview(data, nside, pixel_index_array,total_sky_pixels,title,min=None,max=None,nest=True,unit=None,
-                             declination_mask=False):
-    plot_array = np.zeros(total_sky_pixels)
+    Parameters:
+    map: map to be plotted with shape (distance_bin x pixel) so if it has freq have to select freq before
+    distance: int, distance slice to be plotted
+    longitude: float, longitude (degrees) of the centre of the region to be plotted
+    latitude: float, latitude (degrees) of the centre of the region to be plotted
+    x: int, size of the x axis of plot
+    y: int, size of the y axis of plot
+    min_map: float, minimum color value of the map
+    max_map: float, maximum color value of the map
+    title_map: string, title of the plot
+    unit_map: string, unit of the map
 
-    if declination_mask ==True:
-        dec = create_declination_mask(nside)
-        data_masked = data.copy()
-        data_masked[dec<-30]=hp.UNSEEN
-        plot_array[pixel_index_array]=data_masked
+    Output:
+    A gnomview plot of the map at the specified region
+    '''
+    hp.gnomview(map[distance], rot=(longitude,latitude), title=title_map, nest=True, xsize=x, ysize=y, min=min_map, max=max_map, 
+                cbar=True, unit=unit_map, notext=True)
+    plt.title(title_map, fontsize = 16)
+    cbar = plt.gcf().axes[-1]
+    cbar.tick_params(labelsize=15) 
 
-    else:
-        plot_array[pixel_index_array]=data
-    
-    hp.mollview(plot_array,title=title,nest=nest,min=min,max=max,unit=unit)
+def make_scatterplot_dict(long, lat, lonlat, color, marker, size, alpha=None, label=None):
 
-### 2.1: Region plotting functions
+    '''
+    Makes a dictionary that contains the parameters used for hp.projscatter scatter plots. Note that long, lat must be a 1D array 
+    (so this function must be run for each distance slice).
+
+    Parameters:
+    long, lat: longitude and latitude of the object in degrees
+    lonlat: bool, if True, long and lat are in lonlat format, if False, they are in theta, phi format
+    color: color of the marker
+    marker: marker style
+    size: size of the marker
+    alpha (optional): transparency of the marker
+    label (optional): label of the marker
+
+    Output:
+    scatter_plot_dict: dictionary containing the parameters for the scatter plot
+    '''
+    scatter_plot_dict = {
+        'coords' : [long, lat],
+        'lonlat' : lonlat,
+        'color' :  color,
+        'marker' : marker,
+        #Optional arguments
+        'alpha' : alpha,
+        'size': size,
+        'label' : label
+    }
+
+    return scatter_plot_dict
+
+def make_scatter_plot(scatter_plot_dict, legend = True):
+    '''
+    Uses the dictionary made by make_scatterplot_dict to create a scatter plot on a healpy map (could be gnonview or mollview).
+    Provides the option to add a legend.
+
+    Parameters:
+    scatter_plot_dict: dictionary containing the parameters for the scatter plot
+    legend: bool, if True, adds a legend to the plot
+
+    Output:
+    A scatter plot on a healpy map
+    '''
+    long, lat = scatter_plot_dict['coords']
+    lonlat_bool = scatter_plot_dict['lonlat']
+    color = scatter_plot_dict['color']
+    marker = scatter_plot_dict['marker']
+    alpha = scatter_plot_dict['alpha']
+    size = scatter_plot_dict['size']
+    label = scatter_plot_dict['label']
+
+    hp.projscatter(long, lat, lonlat=lonlat_bool, c=color, marker=marker, alpha=alpha, s=size, label=label)
+    if legend == True:
+        plt.legend(fontsize=14)
+
+## 2: Specific Plotting Functions
+
+### 2.1: Temperature
+def plot_3D_temperature_slice_maps(data_dict):
+
+    '''
+    Function to ONLY plot the original temperature map of shape (pixel x distance_bin) at each distance slice
+    '''
+    Ts = data_dict['temperatures']
+    model_nslices = data_dict["nr_of_distance_bins"]
+    model_dist_slices = data_dict["distance_slices"]
+    for ds_index in range(model_nslices):                                 
+        hp.mollview(Ts[:,ds_index],title=r"$T$ at distance slice "+str(ds_index) +\
+                                   " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc",nest=True,min=10,max=25, unit='K')
+        #plt.savefig("T_128_"+str(ds_index)+".png")
+
+### 2.2: dEBV
+def plot_dEBV(data_dict):
+    """ Plot the reddening in each distance bin
+    """ 
+    dEBV = data_dict["dEBV"]
+    model_nslices = data_dict["nr_of_distance_bins"]
+    model_dist_slices = data_dict["distance_slices"]
+    for ds_index in range(model_nslices):
+        hp.mollview(dEBV[ds_index], title="Differential E(B-V) at distance slice "+str(ds_index) +\
+                     " at "+'{:.2f}'.format(model_dist_slices[ds_index])+" kpc", nest=True, max=1)
+
+### 2.3: Flagging Regions with Certain Properties
 
 def overplot_regions_mollview(region_info, map, dist_slices):
 
@@ -224,8 +257,9 @@ def overplot_region_gnomview(region_centers, map, ds_index, rot, title, xsize=No
             plt.show()
         else:
             plt.close()
-    
-## 3: Getting Images
+
+## 3: RGB and Imaging
+### 3.1: Getting RGB Images
 def create_image(R, G, B):
     '''
     Function that when given R, G, B arrays that are already 2d and normalized, will create an image. 
@@ -405,6 +439,53 @@ def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
 
     return R_uint, G_uint, B_uint, RGB_img
 
+### 3.2: Analysis      
+def plot_RGB_histogram(R, G, B, title, image_name):
+
+    '''
+    Function to create of plot of histograms of the color depth of the RGB channels of an image. 
+
+    Parameters:
+    R, G, B: numpy arrays, the RGB channels of the image
+    title: string, title of the plot
+    image_name: string, name of the image to be saved that should include the path
+
+    Output:
+    A single histogram with the color depth of the RGB channels of the image
+    '''
+        
+    #Plot R
+    plt.hist(R.flatten(), bins=50, color='red', alpha=0.5, label='R') #arrays are 2d so we need to flatten them
+    #Plot G
+    plt.hist(G.flatten(), bins=50, color='green', alpha=0.5, label='G')
+    #Plot B
+    plt.hist(B.flatten(), bins=50, color='blue', alpha=0.5, label='B')
+
+    plt.legend(loc='upper right')
+    plt.yscale('log')
+    plt.xlabel('Color Depth', fontsize=14)
+    plt.ylabel('Number of Pixels', fontsize=14)
+    plt.title(title, fontsize = 16)
+    plt.savefig(image_name, bbox_inches='tight', pad_inches=0.1)
+    plt.show()
+
+## 4: Panels
+def create_panel(size, figsize, path, images, title, filename = None):
+    panel, axs = plt.subplots(size[0], size[1], figsize=figsize)
+    axs = np.atleast_2d(axs) 
+
+    for i in range(size[0]):
+        for j in range(size[1]):
+            img = Image.open(path + f'/{images[i*size[1]+j]}.png')
+            axs[i,j].imshow(img)
+            axs[i,j].axis('off')
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
+    panel.suptitle(title, fontsize=22)    
+    if filename:
+        plt.savefig(filename, bbox_inches='tight', pad_inches=0.1)
+    plt.show() 
+
 def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title, image_path):
     '''
     Function to create a 5 x 3 panel of images of the Cepheus LMC region. The function first saves the images and then calls them 
@@ -531,18 +612,63 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
 
     plt.show()
 
-def create_panel(size, figsize, path, images, title, filename = None):
-    panel, axs = plt.subplots(size[0], size[1], figsize=figsize)
-    axs = np.atleast_2d(axs) 
+def visualize_unknown_features(features_list, n_distslices, path, title, save_name, overplot=True, overplot_list = None):
+    #Loop to create panels
+    for ds_index in range(n_distslices):
+        dist_path = sm.join_path(path, f'Distance_{ds_index}')
+        
+        # Get the number of features at this distance slice
+        num_features = len(features_list[ds_index])
 
-    for i in range(size[0]):
-        for j in range(size[1]):
-            img = Image.open(path + f'/{images[i*size[1]+j]}.png')
-            axs[i,j].imshow(img)
-            axs[i,j].axis('off')
-    
-    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
-    panel.suptitle(title, fontsize=22)    
-    if filename:
-        plt.savefig(filename, bbox_inches='tight', pad_inches=0.1)
-    plt.show() 
+        if num_features > 5:
+            nrows = 2
+
+        else:
+            nrows = 1
+
+        ncols = int((num_features + nrows- 1) // nrows)
+        
+        # Create a figure with multiple subplots for the current distance slice
+        fig, axes = plt.subplots(nrows, ncols, figsize=(10*ncols, 10*nrows))
+        fig.patch.set_facecolor('white')
+
+        if nrows > 1:
+            axes = axes.flatten()
+        
+        for i in range(num_features):
+            features_atdist = features_list[ds_index]
+
+            # Get positions
+            long_full = features_atdist[:, 0]
+            lat_full = features_atdist[:, 1]
+
+            # Format for title
+            long = '{:.2f}'.format(long_full[i])
+            lat = '{:.2f}'.format(lat_full[i])
+
+            unknown_feature_title = 'Unknown Feature at ' + long + ', ' + lat + '\n' + 'with Hot and Cold Regions'
+
+            # Select the appropriate axis for the current feature
+            ax = axes[i] if num_features > 1 else axes
+            
+            # Activate the axis
+            plt.sca(ax)
+
+            # Plot using gnomonic projection directly into the provided axis
+            hp.gnomview(dEBV[ds_index], rot=[long_full[i], lat_full[i]], xsize=400, ysize=400, title=unknown_feature_title, nest=True, unit=dEBV_unit, 
+                        hold=True)
+            if overplot == True:
+                for plot in overplot_list:
+                    make_scatter_plot(plot)
+            plt.title(unknown_feature_title, fontsize=16)
+            cbar = plt.gcf().axes[-1]
+            cbar.tick_params(labelsize=15)
+        
+        # Save the entire figure for the current distance slice
+        fig.suptitle(title + 'Distance ' + '{:.2f}'.format(distslices[ds_index]) + ' kpc', fontsize=20)
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig.savefig(dist_path + save_name + f'Distance{ds_index}.png', bbox_inches='tight', pad_inches=0.1)
+        plt.close(fig)
+
+
+
