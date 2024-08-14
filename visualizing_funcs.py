@@ -4,6 +4,7 @@ import ephem
 import healpy as hp
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import storage_management as sm
 import os
 from PIL import Image, ImageOps
 import calculations as calc
@@ -132,7 +133,7 @@ def make_scatterplot_dict(long, lat, lonlat, color, marker, size, alpha=None, la
 
     return scatter_plot_dict
 
-def make_scatter_plot(scatter_plot_dict, legend = True):
+def make_scatter_plot(scatter_plot_dict, legend = True, scatter_type = 'healpy', subplot = False, ax = None):
     '''
     Uses the dictionary made by make_scatterplot_dict to create a scatter plot on a healpy map (could be gnonview or mollview).
     Provides the option to add a legend.
@@ -152,9 +153,80 @@ def make_scatter_plot(scatter_plot_dict, legend = True):
     size = scatter_plot_dict['size']
     label = scatter_plot_dict['label']
 
-    hp.projscatter(long, lat, lonlat=lonlat_bool, c=color, marker=marker, alpha=alpha, s=size, label=label)
+    if scatter_type == 'healpy':
+        hp.projscatter(long, lat, lonlat=lonlat_bool, c=color, marker=marker, alpha=alpha, s=size, label=label)
+    elif scatter_type == 'matplotlib':
+        if subplot == True:
+            ax.scatter(long, lat, c=color, marker=marker, alpha=alpha, s=size, label=label)
+        else:
+            plt.scatter(long, lat, c=color, marker=marker, alpha=alpha, s=size, label=label)
+    else:
+        print('Invalid scatter type, please choose healpy or matplotlib')
+    
     if legend == True:
         plt.legend(fontsize=14)
+
+def get_fov(xsize, reso, degree=True):
+    '''
+    Get the field of view of a gnomview plot using the xsize and resolution, can return in degrees or radians. Only works of xsize == ysize. 
+
+    Parameters:
+    xsize: int, size of x axis in gnomview plot
+    reso: float, resolution of plot
+    degree: bool, true if want fov returned in degrees
+
+    Output:
+    fov: float, field of view of gnomview plot in degrees or radians
+    '''
+    #Get fov using xsize and reso
+    fov = xsize*(reso/60)
+
+    #If want fov in radians instead of degrees make conversion
+    if degree==False:
+        fov = np.radians(fov)
+
+    return fov
+
+def get_axis_skycoords(l, b, spacing, xsize, reso, degree=True, label = True, prec = None):
+    '''
+    Get x and y axis ticks and labels as sky coordinates from the fov of the gnomview plot. 
+
+    Parameters:
+    l, b: float, longitude and latitude in degrees, would also work for theta, phi or RA and DEC. 
+    spacing: float, spacing between ticks
+    xsize: int, xsize of gnomview plot
+    reso: float, resolution of gnomview plot
+    degree: bool, units of fov, default==True
+    label: bool, will create custom x and y labels
+    prec: int, optional, number of decimal points for labels
+    '''
+    #Get fov
+    fov = get_fov(xsize, reso, degree=degree)
+
+    #Want half of fov because will add and subtract from centre
+    half_fov = fov/2
+
+    #Get min and max for each axis
+    x_lower = l - half_fov 
+    x_upper = l + half_fov
+    y_lower = b - half_fov
+    y_upper = b + half_fov
+    
+    #Get x and y ticks
+    x_ticks = np.linspace(x_lower, x_upper, spacing)
+    y_ticks = np.linspace(y_lower, y_upper, spacing)
+
+    #If also want to get labels make them here and return all
+    if label == True:
+        x_label = ['{:.{}f}'.format(x, prec) for x in x_ticks]
+        y_label = ['{:.{}f}'.format(y, prec) for y in y_ticks]
+
+        return x_ticks, y_ticks, x_label, y_label
+
+    else:
+        return x_ticks, y_ticks
+        
+
 
 ## 2: Specific Plotting Functions
 
@@ -374,7 +446,7 @@ def get_sky_image(data_dict, R, G, B, scale=True):
 
         RGB_image.save(f'{directory}/allsky_rgb_{ds_index}.png')
 
-def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
+def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False, flip=True):
     '''
     Function that gets the RGB image of a region in the sky. Differs from the whole sky due to the use of hp.gnomview. Also provides an option to scale
     the RGB values so that they expand over whole range and in turn makes the image brghter. 
@@ -420,9 +492,14 @@ def get_region_image(R, G, B, dist, longitude, latitude, x, y, scale=False):
         B_array = B_array*scale_factor
 
     #gnomview returns inverted array, so have to flip it to get correct image
-    R_flipped = np.flipud(R_array)
-    G_flipped = np.flipud(G_array)
-    B_flipped = np.flipud(B_array)
+    if flip ==True:
+        R_flipped = np.flipud(R_array)
+        G_flipped = np.flipud(G_array)
+        B_flipped = np.flipud(B_array)
+    else:
+        R_flipped = R_array #Just don't want to have to change the name right now
+        G_flipped = G_array
+        B_flipped = B_array
 
     #Convert to uint8 for image
     R_uint = R_flipped.astype(np.uint8)
@@ -612,7 +689,8 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
 
     plt.show()
 
-def visualize_unknown_features(features_list, n_distslices, path, title, save_name, overplot=True, overplot_list = None):
+def visualize_unknown_features(features_list,map, n_distslices, distslices, path, title, save_name, overplot=True, 
+                               overplot_list = None, one_dist = False):
     #Loop to create panels
     for ds_index in range(n_distslices):
         dist_path = sm.join_path(path, f'Distance_{ds_index}')
@@ -655,11 +733,14 @@ def visualize_unknown_features(features_list, n_distslices, path, title, save_na
             plt.sca(ax)
 
             # Plot using gnomonic projection directly into the provided axis
-            hp.gnomview(dEBV[ds_index], rot=[long_full[i], lat_full[i]], xsize=400, ysize=400, title=unknown_feature_title, nest=True, unit=dEBV_unit, 
+            hp.gnomview(map[ds_index], rot=[long_full[i], lat_full[i]], xsize=400, ysize=400, title=unknown_feature_title, nest=True, unit='dEBV', 
                         hold=True)
             if overplot == True:
                 for plot in overplot_list:
-                    make_scatter_plot(plot)
+                    if one_dist == False:
+                        make_scatter_plot(plot[ds_index])
+                    else:
+                        make_scatter_plot(plot)
             plt.title(unknown_feature_title, fontsize=16)
             cbar = plt.gcf().axes[-1]
             cbar.tick_params(labelsize=15)

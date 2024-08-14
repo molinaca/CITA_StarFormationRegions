@@ -6,6 +6,7 @@ from scipy.spatial import distance_matrix
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 from constants import h, c, k
+from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
 
 
@@ -62,6 +63,26 @@ def midpoint_spherical(theta1, phi1, theta2, phi2):
     theta_mid, phi_mid = hp.vec2ang(mid_vec)
     return theta_mid, phi_mid
 
+def check_if_array_or_float(point):
+    '''
+    Check if point is an array or a float and return the correct shape for broadcasting.
+
+    Parameters:
+    point: array, float64 or float
+
+    Output:
+    point_new: new array, float64 or float depending on input
+    '''
+    
+    if type(point) == np.float64 or type(point) == float:
+        point_new = point
+    elif type(point) == np.ndarray:
+        point_new = point[:, np.newaxis]
+    else:
+        print('incorrect shape for point, try again :P')
+        return None
+    return point_new
+
 ### 1.2: Conversions
 
 def convert_to_lonlat(theta, phi):
@@ -92,6 +113,19 @@ def gal_to_eq(l, b):
     coord = SkyCoord(l=l*u.degree, b=b*u.degree, frame='galactic')
     eq_coord = coord.transform_to('icrs')
     return eq_coord.ra.degree, eq_coord.dec.degree
+
+def dist_to_angdist(d, D):
+    '''
+    Convert a distance in pc to angular distance. 
+
+    Parameters:
+    d: float, distance to convert in pc
+    D: float, distance to object in pc
+    '''
+
+    ang_dist = 2 * np.arcsin(d / (2 * D)) #Derived from small angle approximation
+
+    return ang_dist
 
 ## 2: Temperature and dEBV Map Manipulation
 ### 2.1: Functions for getting temperature tracers
@@ -394,8 +428,8 @@ def assign_distance_slice(data_dict, long, lat, distance):
         found = False #Introduce flag to check if a distance was found
         for ds_idx in range(distance_bins): #Check to see which distance slice sf distance is
             if ds_idx ==0 and dist < distance_slices[0]: #Condition for first distance slice
-                long_slice[0].append(long[0])
-                lat_slice[0].append(lat[0])
+                long_slice[0].append(long[idx])
+                lat_slice[0].append(lat[idx])
                 found = True
                 break
                   
@@ -410,6 +444,150 @@ def assign_distance_slice(data_dict, long, lat, distance):
     print(f"{outofrange_count} objects had distances out of range")
                 
     return long_slice, lat_slice #Return "sliced" values
+
+def get_dist_slice(dists, distslices):
+    '''
+    Given a distance, will return the distance slice it belongs to
+
+    Parameters:
+    dist: float, distance in pc 
+    n_distslices: int, number of distance slices
+    distslices: array-like, distance slice values pc
+
+    Output:
+    dist_index: int, distance slice assigned
+    '''
+    dist_indices = np.digitize(dists, distslices, right=False)
+    dist_indices[dists >= distslices[-1]] = len(distslices)
+    return dist_indices
+
+def make_array_with_combined_distance_slices(coords_list, n_distslices, distslices):
+    '''
+    Combine distance slices of an array into a singular array.
+
+    Parameters:
+    coords_list: list in form (ds_index, n_coords, 2) where ds_index is the distance slice index, n_coords is the number of coordinates in that slice, 
+                 and 2 is the l and b coordinates
+    n_distslices: array of the number of distance slices
+    distslices: array of the distance slices
+    '''
+
+    #Make list of combined coordinates
+    l_list = [coords_list[ds_index][:, 0] for ds_index in range(n_distslices)]
+    b_list = [coords_list[ds_index][:, 1] for ds_index in range(n_distslices)]
+    d_list = [np.full(len(coords_list[ds_index]), distslices[ds_index]) for ds_index in range(n_distslices)]
+
+    #Combine lists into one array
+    l_array = np.concatenate(l_list)
+    b_array = np.concatenate(b_list)
+    d_array = np.concatenate(d_list)
+
+    return l_array, b_array, d_array
+
+def calculate_distance_of_two_arrays_in_space(l0_flat, b0_flat, D0_flat, l1, b1, D1):
+
+    '''
+    Calculates the distance between two arrays of points in space us np.broadcasting. Inspired by Joseph Tang's
+    function calculate_distance_of_stars_to_an_array_of_points_in_space.
+
+    Parameters:
+    l0_flat: array of longitudes of points in space [radians]
+    b0_flat: array of latitudes of points in space [radians]
+    D0_flat: array or floating point distance of points in space [pc]
+    l1: array of longitudes of another point in space [radians]
+    b1: array of latitudes of another point in space [radians]
+    D1: array or floating point distance of another point in space [pc]
+
+    Output:
+    d_to_point: array of distances between the two sets of points [pc]
+    '''    
+    # Making the arrays broadcastable
+
+    l0 = check_if_array_or_float(l0_flat)
+    b0 = check_if_array_or_float(b0_flat)
+    D0 = check_if_array_or_float(D0_flat)
+    
+    # Calculate distance
+    cos_term = np.cos(b0) * np.cos(b1) * np.cos(l0 - l1)
+    sin_term = np.sin(b0)*np.sin(b1)
+    d_to_point = np.sqrt(D0**2 + D1**2 - 2*D0*D1*(sin_term + cos_term)) #[pc] 
+
+    return d_to_point
+
+def get_distances_within_threshold(l_1, b_1, d_1, l_2, b_2, d_2, threshold, return_list = True):
+    '''
+    Calculate distances between two sets of points in space and return only those that are within a certain threshold.
+
+    Parameters: 
+    l1, b1, d1: array-like, longitudes, latitudes, and distances of first set of points [radians, radians, pc]
+    l2, b2, d2: array-like, longitudes, latitudes, and distances of second set of points [radians, radians, pc]
+    threshold: float, maximum distance [pc] between points
+    return_list: bool, if True return list of distances, if False return array of distances
+    '''
+
+    #Calculate distances between points
+    distances = calculate_distance_of_two_arrays_in_space(l_1, b_1, d_1, l_2, b_2, d_2)
+    mask = distances < threshold #Make mask of distances within threshold 
+
+    #Return list of distances if return_list is True
+    if return_list == True:
+
+        filtered_distances = distances[mask]
+    
+    else:
+        filtered_distances = np.array([dist[mask[idx]] for idx, dist in enumerate(distances)])
+
+
+    return filtered_distances
+
+def get_min_distance(l_1, b_1, d_1, l_2, b_2, d_2, within_threshold = False, threshold = None):
+
+    '''
+    Calculate minimum distance between two arrays of coordinates. Use has the option to set a threshold and only find the minimum within that threshold.
+
+    Parameters:
+    l1, b1, d1: array-like, longitudes, latitudes, and distances of first set of points [radians, radians, pc]
+    l2, b2, d2: array-like, longitudes, latitudes, and distances of second set of points [radians, radians, pc]
+    within_threshold: bool, if true, get minimum within threshold. If false, get minimum distance between all points.
+    threshold: float, maximum distance [pc] between points
+
+    Output:
+    min_distances: array-like, minimum distances between points
+    '''
+
+    #Calculate distance
+    distances = calculate_distance_of_two_arrays_in_space(l_1, b_1, d_1, l_2, b_2, d_2)
+
+    #If within threshold, make mask and find distances where mask = True
+    if within_threshold == True:
+        mask = distances < threshold
+        dist_within_threshold = np.where(mask, distances, np.inf) #Find distances where mask is True, otherwise set to infinity
+        #Make sure distances exist, if not print message
+        if dist_within_threshold.size > 0:
+
+            #Check dimensions to know where to calculate minimum from
+            if dist_within_threshold.ndim == 1:
+                min_array = np.min(dist_within_threshold)
+                min_distance = min_array[min_array != np.inf] #Remove infinities
+            else:
+                min_array = np.min(dist_within_threshold, axis=1) #Do it along axis 1
+                min_distance = min_array[min_array != np.inf] #Remove infinities
+        else:
+            print('No distances within threshold')
+
+    else:
+        #If no threshold, still check dimensions
+        if distances.ndim == 1:
+            min_distance = np.min(distances)
+
+        else:
+            min_distance = np.min(distances, axis=1)
+
+    #Make sure min_distance exists, if not return None.
+    if min_distance.size == 0:
+        return None
+    else:
+        return min_distance
             
 ## 4: Functions for RGB and Imaging
 def get_RGB(dens_temp):
@@ -490,7 +668,7 @@ def get_rgb_roi(R, G, B, x, y, w, h):
 ## 5: Flagging Regions with Certain Properties
 ### 5.1 : Getting Regions and Maps
 
-def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold, radius, lowtohigh=False):
+def flag_regions(nside, ndistslices, distslices, map, primary_threshold, secondary_threshold, radius, lowtohigh=False):
     '''
     Function that based on two thresholds, identifies which areas of the dust map have high dEBV (dust density). It saves these areas on their
     own, which includes details about the region maximum, as well as a map with all the regions. 
@@ -510,7 +688,7 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
 
     #Make region_info list and high_density map    
 
-    region_info = [[] for i in range(dist_slices)]
+    region_info = [[] for i in range(ndistslices)]
 
     high_density_map = np.zeros_like(map)
 
@@ -519,7 +697,7 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
     else:
         reverse = True
 
-    for ds_index in range(dist_slices):
+    for ds_index in range(ndistslices):
         # Create a binary mask for high-density regions (True if high dEBV, false otherwise)
 
         current_map = map[ds_index] #Define to make it easier
@@ -535,13 +713,16 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
 
         pixels_to_check = sorted(pixels_to_check, key=lambda p: current_map[p], reverse=reverse)
 
+        current_dist = distslices[ds_index]*1000
+        radius_angdist = dist_to_angdist(radius, current_dist) #Convert radius to angular distance
+
         for pixel in pixels_to_check:
             if pixel not in checked_pixels: # If pixel has not been checked yet
 
                 #Make vector for pixel we're looking at
                 pixel_vec = hp.pix2vec(nside, pixel, nest=True)
                 
-                region = hp.query_disc(nside, pixel_vec, np.radians(radius), nest=True, inclusive=True) #pick region around pixel
+                region = hp.query_disc(nside, pixel_vec, radius_angdist, nest=True, inclusive=True) #pick region around pixel
                 
                 if lowtohigh == True:
                     region = [p for p in region if current_map[p] < secondary_threshold]
@@ -556,7 +737,7 @@ def flag_regions(nside, dist_slices, map, primary_threshold, secondary_threshold
                     checked_pixels.update(region) #update pixels that have been checked
                     
                     # Calculate the max because that is where regions will be "flagged" at
-                    max_dEBV_pixel = region[np.argmax(current_map[region])]
+                    #max_dEBV_pixel = region[np.argmax(current_map[region])]
                     
                     theta, phi = hp.pix2ang(nside, pixel, nest=True)#mark this pixel in the map
                     
