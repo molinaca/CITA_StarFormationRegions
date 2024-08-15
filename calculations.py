@@ -28,7 +28,7 @@ def WiensLaw(T):
     nu_max = 2.824*k*T/h
     return nu_max
 
-def angular_distance(theta1, phi1, theta2, phi2):
+def angular_distance(theta1, phi1, theta2, phi2, lonlat=False):
     '''
     Calculate the angular distance between two points (theta, phi) in radians on a sphere. Vectorizes the angle and uses healpy's angdist function
 
@@ -39,13 +39,17 @@ def angular_distance(theta1, phi1, theta2, phi2):
     Output:
     distance: angular distance between the two points in radians
     '''
+
+    if lonlat == True:
+        theta1, phi1 = convert_to_theta_phi(theta1, phi1)
+
     vec1 = hp.ang2vec(theta1, phi1)
     vec2 = hp.ang2vec(theta2, phi2)
     distance = hp.rotator.angdist(vec1, vec2)
     return distance
 
 #Take midpoint to be center of region with both
-def midpoint_spherical(theta1, phi1, theta2, phi2):
+def midpoint_spherical(theta1, phi1, theta2, phi2, lonlat=False):
     '''
     Calculate the midpoint between two points (theta, phi) in radians on a sphere. Vectorizes the angle, calculates the midpoint
     using numpy linear algebra, and then converts back to (theta, phi) using healpy's vec2ang function
@@ -57,10 +61,25 @@ def midpoint_spherical(theta1, phi1, theta2, phi2):
     Output:
     theta_mid, phi_mid: angles of the midpoint in radians (given as hp.vec2ang(mid_vec))
     '''
+
+    if lonlat == True:
+        long1 = theta1
+        lat1 = phi1
+        theta1, phi1 = convert_to_theta_phi(long1, lat1)
+
+        long2 = theta2
+        lat2 = phi2
+        theta2, phi2 = convert_to_theta_phi(long2, lat2)
+
+
     vec1 = hp.ang2vec(theta1, phi1)
     vec2 = hp.ang2vec(theta2, phi2)
     mid_vec = (vec1 + vec2) / np.linalg.norm(vec1 + vec2)
     theta_mid, phi_mid = hp.vec2ang(mid_vec)
+
+    if lonlat == True:
+        theta_mid, phi_mid = convert_to_lonlat(theta_mid, phi_mid)
+        
     return theta_mid, phi_mid
 
 def check_if_array_or_float(point):
@@ -103,6 +122,24 @@ def convert_to_lonlat(theta, phi):
     lat = 90 - np.degrees(theta)
     
     return long, lat
+
+def convert_to_theta_phi(long, lat):
+    '''
+    Convert coordinates in (long, lat) in degrees, to (theta, phi) in radians
+
+    Parameters:
+    long: array-like, longitude in degrees
+    lat: array-like, latitude in degrees
+
+    Output:
+    theta: array-like, colatitude in radians
+    phi: array-like, longitude in radians
+    '''
+
+    theta = np.radians(90 - lat)
+    phi = np.radians(long)
+
+    return theta, phi
 
 def eq_to_gal(ra, dec):
     coord = SkyCoord(ra=ra*u.degree, dec=dec*u.degree, frame='icrs')
@@ -458,10 +495,14 @@ def get_dist_slice(dists, distslices):
     dist_index: int, distance slice assigned
     '''
     dist_indices = np.digitize(dists, distslices, right=False)
-    dist_indices[dists >= distslices[-1]] = len(distslices)
+    if np.isscalar(dist_indices):
+        if dists >= distslices[-1]:
+            dist_indices = len(distslices)
+    else:
+        dist_indices[dists >= distslices[-1]] = len(distslices)
     return dist_indices
 
-def make_array_with_combined_distance_slices(coords_list, n_distslices, distslices):
+def make_array_with_combined_distance_slices(coords_list, n_distslices, distslices, with_colon=True):
     '''
     Combine distance slices of an array into a singular array.
 
@@ -473,9 +514,16 @@ def make_array_with_combined_distance_slices(coords_list, n_distslices, distslic
     '''
 
     #Make list of combined coordinates
-    l_list = [coords_list[ds_index][:, 0] for ds_index in range(n_distslices)]
-    b_list = [coords_list[ds_index][:, 1] for ds_index in range(n_distslices)]
-    d_list = [np.full(len(coords_list[ds_index]), distslices[ds_index]) for ds_index in range(n_distslices)]
+    if with_colon == True:
+        l_list = [coords_list[ds_index][:, 0] for ds_index in range(n_distslices)]
+        b_list = [coords_list[ds_index][:, 1] for ds_index in range(n_distslices)]
+        d_list = [np.full(len(coords_list[ds_index]), distslices[ds_index]) for ds_index in range(n_distslices)]
+
+
+    else:
+        l_list = [coords_list[ds_index][0] for ds_index in range(n_distslices)]
+        b_list = [coords_list[ds_index][1] for ds_index in range(n_distslices)]
+        d_list = [np.full(len(coords_list[ds_index][0]), distslices[ds_index]) for ds_index in range(n_distslices)]
 
     #Combine lists into one array
     l_array = np.concatenate(l_list)
@@ -511,6 +559,33 @@ def calculate_distance_of_two_arrays_in_space(l0_flat, b0_flat, D0_flat, l1, b1,
     cos_term = np.cos(b0) * np.cos(b1) * np.cos(l0 - l1)
     sin_term = np.sin(b0)*np.sin(b1)
     d_to_point = np.sqrt(D0**2 + D1**2 - 2*D0*D1*(sin_term + cos_term)) #[pc] 
+
+    return d_to_point
+
+def calculate_distance_of_two_arrays_in_same_distance_slice(l0, b0, l1, b1, D):
+
+    '''
+    Calculates the distaance of two arrays that are at the same distance slice. 
+
+    Parameters:
+    l0: array of longitudes of first array [radians]
+    b0: array of latitudes of first array [radians]
+    l1: array of longitudes of second array [radians]
+    b1: array of latitudes of second array [radians]
+    D: float, distance slice [pc]
+
+    Output:
+    d_to_point: array of distances to each point in the second array [pc]
+    '''
+
+    #Add new axis for np.broadcasting
+    l0_arr = l0[:, np.newaxis]
+    b0_arr = b0[:, np.newaxis]
+
+    #Calculate distance
+    cos_term = np.cos(b0_arr) * np.cos(b1) * np.cos(l0_arr - l1)
+    sin_term = np.sin(b0_arr)*np.sin(b1)
+    d_to_point = D*np.sqrt(2*(1-(sin_term + cos_term))) #[pc] 
 
     return d_to_point
 
@@ -842,20 +917,113 @@ def get_region_maps(region_info, nside, ds_index, filter = False, rot = None, ra
     
     return region_maps 
 
-def find_close_RandB(blue_centers, red_centers, threshold):
+def find_close_RandB(blue_centers, red_centers, dist, threshold, lonlat=False):
 
-    matched_regions_midpoints = []
+    '''
+    Finds regions with hot and cold pixels next to eachother, given a certain threshold.
 
-    for theta_blue, phi_blue in blue_centers:
-        for theta_red, phi_red in red_centers:
-            if angular_distance(theta_blue, phi_blue, theta_red, phi_red) <= threshold:
-                mid_theta, mid_phi = midpoint_spherical(theta_blue, phi_blue, theta_red, phi_red)
-                matched_regions_midpoints.append([float(mid_theta),float(mid_phi)])
-                #break #If you only want to add the midpoint once
+    Parameters:
+    blue_centers: array, centers of hot/blue regions [theta, phi] in radians
+    red_centers: array, centers of cold/red regions [theta, phi] in radians
+    dist: float, distance slice [pc]
+    threshold: float, threshold for distance between regions [pc]
 
-    matched_regions_midpoints = np.array(matched_regions_midpoints)
+    Output:
+    '''
 
-    return matched_regions_midpoints
+    #Get theta and phi from arrays
+    if lonlat==False:
+        blue_theta = blue_centers[:,0]
+        blue_phi = blue_centers[:,1]
+        red_theta = red_centers[:,0]
+        red_phi = red_centers[:,1]
+
+        #Distance function only takes long lat in radians, so have to conver to (l,b) and then to radians
+        blue_l, blue_b = convert_to_lonlat(blue_theta, blue_phi)
+        red_l, red_b = convert_to_lonlat(red_theta, red_phi)
+    else:
+        blue_l = blue_centers[:,0]
+        blue_b = blue_centers[:,1]
+        red_l = red_centers[:,0]
+        red_b = red_centers[:,1]
+
+    blue_l_rad = np.radians(blue_l)
+    blue_b_rad = np.radians(blue_b)
+    red_l_rad = np.radians(red_l)
+    red_b_rad = np.radians(red_b)
+
+    #Get distance matrix
+    distances = calculate_distance_of_two_arrays_in_same_distance_slice(blue_l_rad, blue_b_rad, red_l_rad, red_b_rad, dist)
+
+    #Make mask of distances within threshold
+    mask = distances <= threshold
+
+    #Get indices that correspond to mask
+    close_indices = np.where(mask)
+
+    blue_l_close = blue_l[close_indices[0]]
+    blue_b_close = blue_b[close_indices[0]]
+    red_l_close = red_l[close_indices[1]]
+    red_b_close = red_b[close_indices[1]]
+
+    #Calculate midpoint and classify that as new coords
+
+    close_long, close_lat = midpoint_spherical(blue_l_close, blue_b_close, red_l_close, red_b_close, lonlat=True)
+
+    return close_long, close_lat
+
+def get_coords_in_specific_region(rot, size, l, b, distances, dist_bounds, degree = True, convert_to_rad = True):
+
+    '''
+    Filters an array of coordinates and distances to only include those within a specific region of the sky. This region is defined by a gnomview image given by 
+    hp.projector.GnomonicProj. Contains options for units (degrees or radians) and whether to convert to radians.
+
+    Parameters:
+    rot: array, center of region in l and b coordinates
+    size: array, size of the image in pixels
+    l, b: array, longitude and latitude coordinates want to filter
+    distances: array, distances of each coordinate
+    dist_bounds: array, lower and upper bounds of distances want to filter
+    degree: bool, whether to convert fov to degrees
+    convert_to_rad: bool, whether to convert l and b to radians
+
+    '''
+    #Get center of image and make projection
+    l_center, b_center = rot[0], rot[1]
+
+    proj_map = hp.projector.GnomonicProj(rot=[l_center, b_center], xsize=size[0], ysize=size[1])
+
+    #Get fov of image and convert to degrees if necessary
+    fov = proj_map.get_fov()
+
+    #Convert fov to degree if degree equal
+    if degree == True:
+        fov = np.degrees(fov)
+    
+    #Make bounds
+    l_lower = l_center - fov
+    l_upper = l_center + fov
+    b_lower = b_center - fov
+    b_upper = b_center + fov
+    d_lower = dist_bounds[0]
+    d_upper = dist_bounds[1]
+
+
+    #Make masks
+    mask_l = (l >= l_lower) & (l <= l_upper)
+    mask_b = (b >= b_lower) & (b <= b_upper)
+    mask_d = (distances >= d_lower) & (distances <= d_upper)
+
+    #Filter arrays
+    l_filtered = l[mask_l & mask_b & mask_d]
+    b_filtered = b[mask_l & mask_b & mask_d]
+    d_filtered = distances[mask_l & mask_b & mask_d]
+
+    if convert_to_rad == True:
+        l_filtered = np.radians(l_filtered)
+        b_filtered = np.radians(b_filtered)
+
+    return l_filtered, b_filtered, d_filtered
 
 ### 5.2: Looking at Features
 
@@ -887,22 +1055,25 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
         #Get current coordinates and calculate the distance between each point using distance_matrix
 
         current_coords = coords[ds_index]
+        print(current_coords)
 
         dist_matrix = distance_matrix(current_coords, current_coords)
+        print(dist_matrix)
 
         #Get long, lat to make coords_array with them
 
         if lonlat == False:
 
-            theta, phi = current_coords[:,0], current_coords[:,1]
+            theta, phi = current_coords[0], current_coords[1]
 
             long, lat = convert_to_lonlat(theta, phi)
 
         elif lonlat == True:
 
-            long, lat = current_coords[:,0], current_coords[:,1]
+            long, lat = current_coords[0], current_coords[1]
 
         coords_array = np.column_stack((long, lat))
+        print(coords_array)
 
         #Create groups based on whether they are within the distance threshold of eachother
 

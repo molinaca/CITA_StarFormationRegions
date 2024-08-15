@@ -102,6 +102,35 @@ def plot_map_region(map, distance, longitude, latitude, title_map, x=None, y=Non
     cbar = plt.gcf().axes[-1]
     cbar.tick_params(labelsize=15) 
 
+def make_label_dict(title, cbar_label = None, x_label = None, y_label = None, sup_title = None):
+    '''
+    Make a dictionary containing labels for a plot. 
+
+    Parameters:
+    title: string, title of the plot
+
+        Optional:
+        cbar_label: string, label of the colorbar
+        x_label: string, label of the x-axis
+        y_label: string, label of the y-axis
+        sup_title: string, super title of the plot
+
+    Output:
+    label_dict: dictionary, contains the labels from parameters
+
+    '''
+    label_dict = {'title': title}
+    if cbar_label:
+        label_dict['cbar_label'] = cbar_label
+    if x_label:
+        label_dict['x_label'] = x_label
+    if y_label:
+        label_dict['y_label'] = y_label
+    if sup_title:
+        label_dict['sup_title'] = sup_title
+    return label_dict
+
+
 def make_scatterplot_dict(long, lat, lonlat, color, marker, size, alpha=None, label=None):
 
     '''
@@ -165,6 +194,70 @@ def make_scatter_plot(scatter_plot_dict, legend = True, scatter_type = 'healpy',
     
     if legend == True:
         plt.legend(fontsize=14)
+        
+def make_matplotlib_scatter_plot(scatter_plot_dict, proj_map, subplot = False, ax = None, boundaries = None):
+    '''
+    Performs conversions and calculations to simulate the effect of hp.projscatter but with matplotlib.scattter instead. Provides the option to include this in
+    a subplot to as a standalone figure. 
+
+    Parameters:
+    scatter_plot_dict: dictionary, contains the following keys:
+        'coords': list of longitudes and latitudes
+        'lonlat': bool, if True, then the coordinates are in lonlat, if False, then in radians
+        'color': string, color of the points
+        'marker': string, marker of the points
+        'alpha': float, transparency of the points
+        'size': float, size of the points
+        'label': string, label of the points
+    proj_map: array, gnomonoic projection from hp.projector.GnomonicProj
+    subplot: bool, if True, then the scatter plot will be included in a subplot, if False, then it will be a standalone figure
+    ax: axis, if subplot is True, then the axis must be provided
+    boundaries: list, boundaries of the plot, if provided, then points outside the boundaries will be masked
+
+    Output:
+    scatter plots of the dictionaries provided
+    '''
+
+    #Extract valuable information from dictionary
+    long, lat = np.array(scatter_plot_dict['coords'])
+    lonlat_bool = scatter_plot_dict['lonlat']
+    color = scatter_plot_dict['color']
+    marker = scatter_plot_dict['marker']
+    alpha = scatter_plot_dict['alpha']
+    size = scatter_plot_dict['size']
+    label = scatter_plot_dict['label']
+
+    #Convert to lonlat if necessary
+    if lonlat_bool == False:
+        long, lat = calc.convert_to_lonlat(long, lat)
+
+    #Use hp.projector to positions of x and y on projection
+    x, y = proj_map.ang2xy(long, lat, lonlat=True)
+
+    #Mask points outside the boundaries
+    if boundaries:
+        #Define boundaries
+        x_lower, x_upper = boundaries[0], boundaries[1]
+        y_lower, y_upper = boundaries[2], boundaries[3]
+
+        #Mask points 
+        x_mask = (x >= x_lower) & (x <= x_upper)
+        y_mask = (y >= y_lower) & (y <= y_upper)
+
+        x = x[x_mask & y_mask]
+        y = y[x_mask & y_mask]
+
+    #Now plot them depending on if subplot or not
+    if subplot == True:
+        ax.scatter(x, y, c=color, marker=marker, alpha=alpha, s=size, label=label)
+        ax.legend(fontsize=14)
+    elif subplot == False:
+        plt.scatter(x, y, c=color, marker=marker, alpha=alpha, s=size, label=label)
+        plt.legend(fontsize=14)
+
+    else:
+        print('Error: subplot must be True or False')
+
 
 def get_fov(xsize, reso, degree=True):
     '''
@@ -329,6 +422,102 @@ def overplot_region_gnomview(region_centers, map, ds_index, rot, title, xsize=No
             plt.show()
         else:
             plt.close()
+
+def make_gnomview_matplotlib(map, rot, size, labels, nside, ax, fig, grid = True, scatter = True, scatter_list = None):
+    '''
+    Function that simulated the same output as overplot_region_gnomview but with matplotlib. It uses hp.projector.GnomonicProj to project the map
+    and provides the option to overplot a scatter plot on top of the map. Only works if a subplot, should change this in the future. 
+
+    Parameters: 
+    map: array, map to be plotted
+    rot: list, rotation of the map in form [long, lat] in degrees
+    size: int list, size of the map in form [xsize, ysize]
+    labels: dictionary, contains the following keys:
+        'title': string, title of the plot
+        'cbar_label': string, label of the colorbar (optional)
+        'x_label': string, label of the x-axis (optional)
+        'y_label': string, label of the y-axis (optional)
+        'sup_title': string, super title of the plot (optional)
+
+    nside: int, nside of the map
+    ax: axis, axis of the plot
+    fig: figure, figure of the plot
+    grid: bool, if True, then grid will be plotted, if False, then not
+    scatter: bool, if True, then scatter plot will be plotted, if False, then not
+    scatter_list: list, list of dictionaries containing the scatter plot information, only used if scatter = True
+
+    Output:
+    plot of the map with the scatter plot if scatter = True
+    '''
+
+    #Define variables
+    l = rot[0]
+    b = rot[1]
+    xsize, ysize = size[0], size[1]
+
+    #Get Gnomonic Projection
+    proj_map = hp.projector.GnomonicProj(rot=[l, b], xsize=xsize, ysize=ysize)
+
+    #Get field of view in degrees
+    fov = proj_map.get_fov()
+    fov_deg = np.degrees(fov)
+
+    #In order to get image, need to define a function that GnomonicProj.projmap can use. Needs nside so defined within function
+    def vec2pix_func(x, y, z):
+        return hp.vec2pix(nside, x, y, z, nest=True)
+    
+    img = proj_map.projmap(map, vec2pix_func)
+
+    #Get bounds in sky coordinates
+    x_lower = l - fov_deg/2
+    x_upper = l + fov_deg/2
+    y_lower = b - fov_deg/2
+    y_upper = b + fov_deg/2
+
+    #Get bounds in from of extent
+    edges_extent = proj_map.get_extent()
+
+    #Plot image
+    im = ax.imshow(img, origin='lower', extent=edges_extent)
+
+    #Plot grid
+    if grid:
+        ax.grid(True, color='dimgrey')
+
+    #Plot scatter plot
+    if scatter:
+        for plot in scatter_list:
+            make_matplotlib_scatter_plot(plot, proj_map, subplot=True, ax=ax, boundaries=edges_extent)
+    
+    
+    #x and y ticks will be extents
+    x_extent = np.linspace(edges_extent[0], edges_extent[1], 5)
+    y_extent = np.linspace(edges_extent[2], edges_extent[3], 5)
+
+    ax.set_xticks(x_extent)  # Example for x ticks
+    ax.set_yticks(y_extent)    # Example for y ticks
+
+    #Set the labels using bounds
+    x_ticks_label = np.linspace(x_lower, x_upper, 5)
+    y_ticks_label = np.linspace(y_lower, y_upper, 5)
+
+    ax.set_xticklabels(['{:.2f}'.format(x) for x in x_ticks_label[::-1]], fontsize=14)
+    ax.set_yticklabels(['{:.2f}'.format(y) for y in y_ticks_label], fontsize=14)
+    
+    ax.set_xlabel('l (deg)', fontsize=15)
+    ax.set_ylabel('b (deg)', fontsize=15)
+
+    #Get labels from dictionary
+    cbar_label = labels['cbar_label']
+    title = labels['title']
+    
+    #Get color bar
+    cbar = fig.colorbar(im, ax=ax, orientation='vertical', shrink=0.6)
+    cbar.ax.tick_params(labelsize=14)
+    cbar.set_label(cbar_label, fontsize=14)
+
+    #Set title
+    ax.set_title(title, fontsize=16)
 
 ## 3: RGB and Imaging
 ### 3.1: Getting RGB Images
