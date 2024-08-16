@@ -815,10 +815,12 @@ def flag_regions(nside, ndistslices, distslices, map, primary_threshold, seconda
                     #max_dEBV_pixel = region[np.argmax(current_map[region])]
                     
                     theta, phi = hp.pix2ang(nside, pixel, nest=True)#mark this pixel in the map
+
+                    long, lat = convert_to_lonlat(theta, phi) #convert to lon lat
                     
                     #Add info to dictionary
                     region_info[ds_index].append({
-                        'center': (theta, phi),
+                        'center': [long, lat],
                         'region_pixels': region,
                         'region_values': current_map[region],
                     })
@@ -843,7 +845,9 @@ def get_region_centers(region_info, n_dist_slices):
     for ds_index in range(n_dist_slices):
     
         center = np.array([region['center'] for region in region_info[ds_index]])
-        region_centers.append(center)
+        long = center[:, 0]
+        lat = center[:, 1]
+        region_centers.append(np.array([long, lat]))
 
     return region_centers
 
@@ -933,19 +937,19 @@ def find_close_RandB(blue_centers, red_centers, dist, threshold, lonlat=False):
 
     #Get theta and phi from arrays
     if lonlat==False:
-        blue_theta = blue_centers[:,0]
-        blue_phi = blue_centers[:,1]
-        red_theta = red_centers[:,0]
-        red_phi = red_centers[:,1]
+        blue_theta = blue_centers[0]
+        blue_phi = blue_centers[1]
+        red_theta = red_centers[0]
+        red_phi = red_centers[1]
 
         #Distance function only takes long lat in radians, so have to conver to (l,b) and then to radians
         blue_l, blue_b = convert_to_lonlat(blue_theta, blue_phi)
         red_l, red_b = convert_to_lonlat(red_theta, red_phi)
     else:
-        blue_l = blue_centers[:,0]
-        blue_b = blue_centers[:,1]
-        red_l = red_centers[:,0]
-        red_b = red_centers[:,1]
+        blue_l = blue_centers[0]
+        blue_b = blue_centers[1]
+        red_l = red_centers[0]
+        red_b = red_centers[1]
 
     blue_l_rad = np.radians(blue_l)
     blue_b_rad = np.radians(blue_b)
@@ -1027,7 +1031,7 @@ def get_coords_in_specific_region(rot, size, l, b, distances, dist_bounds, degre
 
 ### 5.2: Looking at Features
 
-def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
+def group_regions(coords, distance_threshold, n_distslices, distslices, lonlat=False):
 
     '''
     Groups regions (for my purposes neighbouring hot and cold regions) that are within a distance threshold of eachother. It will output the
@@ -1045,7 +1049,6 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
 
     #Initialize list to store group centroids
 
-    threshold = distance_threshold
     group_centroids = [[] for i in range(n_distslices)]
 
     #Want to calculate centroid of all regions at each distance slice so iterate over them
@@ -1055,10 +1058,8 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
         #Get current coordinates and calculate the distance between each point using distance_matrix
 
         current_coords = coords[ds_index]
-        print(current_coords)
-
-        dist_matrix = distance_matrix(current_coords, current_coords)
-        print(dist_matrix)
+        
+        dist_angdist_threshold = dist_to_angdist(distance_threshold, distslices[ds_index]*1000)
 
         #Get long, lat to make coords_array with them
 
@@ -1072,8 +1073,11 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
 
             long, lat = current_coords[0], current_coords[1]
 
+        coords_vecs = hp.ang2vec(long, lat, lonlat=True)
+
         coords_array = np.column_stack((long, lat))
-        print(coords_array)
+
+        dist_matrix = distance_matrix(coords_vecs, coords_vecs)
 
         #Create groups based on whether they are within the distance threshold of eachother
 
@@ -1083,7 +1087,7 @@ def group_regions(coords, distance_threshold, n_distslices, lonlat=False):
             #Get point i, make group with it, and then for each j that is within the threshold, add it to the group, then make it a set
             group = [i]
             for j in range(len(coords_array)):
-                if i != j and dist_matrix[i, j] < threshold:
+                if i != j and dist_matrix[i, j] < dist_angdist_threshold:
                     group.append(j)
             groups.append(set(group))
 

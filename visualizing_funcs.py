@@ -219,7 +219,8 @@ def make_matplotlib_scatter_plot(scatter_plot_dict, proj_map, subplot = False, a
     '''
 
     #Extract valuable information from dictionary
-    long, lat = np.array(scatter_plot_dict['coords'])
+    coords = np.array(scatter_plot_dict['coords'])
+    long, lat = coords[0], coords[1]
     lonlat_bool = scatter_plot_dict['lonlat']
     color = scatter_plot_dict['color']
     marker = scatter_plot_dict['marker']
@@ -373,7 +374,7 @@ def overplot_regions_mollview(region_info, map, dist_slices):
 
         #Make sure region_info exists
         if region_centers[ds_index].size > 0:
-            hp.projscatter(region_centers[ds_index][:, 0], region_centers[ds_index][:, 1], s=8, marker='o', color='red')
+            hp.projscatter(region_centers[ds_index][0], region_centers[ds_index][1], lonlat=True, s=8, marker='o', color='red')
             plt.show()
 
         else:
@@ -407,7 +408,7 @@ def overplot_region_gnomview(region_centers, map, ds_index, rot, title, xsize=No
     if regions_atdist.size > 0:
 
         hp.gnomview(map[ds_index], rot=rot, title=title, xsize = xsize, ysize = ysize,unit=unit, nest=True, cbar=True, notext=True)
-        hp.projscatter(regions_atdist[:,0], regions_atdist[:,1], s=15, marker='o', color='red')
+        hp.projscatter(regions_atdist[0], regions_atdist[1], s=15, marker='o', color='red')
         plt.legend(['Region Centers'], fontsize=12)
         plt.title(title, fontsize = 16)
 
@@ -517,7 +518,7 @@ def make_gnomview_matplotlib(map, rot, size, labels, nside, ax, fig, grid = True
     cbar.set_label(cbar_label, fontsize=14)
 
     #Set title
-    ax.set_title(title, fontsize=16)
+    ax.set_title(title, fontsize=18)
 
 ## 3: RGB and Imaging
 ### 3.1: Getting RGB Images
@@ -887,6 +888,10 @@ def visualize_unknown_features(features_list,map, n_distslices, distslices, path
         # Get the number of features at this distance slice
         num_features = len(features_list[ds_index])
 
+        if num_features == 0:
+            print(f'No unknown features at distance slice {ds_index}')
+            continue
+
         if num_features > 5:
             nrows = 2
 
@@ -922,7 +927,7 @@ def visualize_unknown_features(features_list,map, n_distslices, distslices, path
             plt.sca(ax)
 
             # Plot using gnomonic projection directly into the provided axis
-            hp.gnomview(map[ds_index], rot=[long_full[i], lat_full[i]], xsize=400, ysize=400, title=unknown_feature_title, nest=True, unit='dEBV', 
+            hp.gnomview(map[ds_index], rot=[long_full[i], lat_full[i]], xsize=600, ysize=600, title=unknown_feature_title, nest=True, unit='dEBV', 
                         hold=True)
             if overplot == True:
                 for plot in overplot_list:
