@@ -46,7 +46,7 @@ def plot_map(data_dict, map, min_map, max_map, title_map, unit_map, nside, decli
             plot_array[pixel_index_array]=data_masked
 
         else:
-            plot_array[pixel_index_array]=map[ds_index]
+            plot_array=map[ds_index]
             
         hp.mollview(plot_array, title = map_title,nest=True, min=min_map, max=max_map, unit=unit_map)
         plt.title(map_title, fontsize = 16)
@@ -809,7 +809,7 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
     #Temperature new
     Ts_new_title = f'$T$ of {plot_title} with nside 1024'
 
-    plot_map_region(Ts_new, dist, longitude, latitude, xsize, ysize, temp_min, temp_max, Ts_new_title, temp_unit)
+    plot_map_region(Ts_new, dist, longitude, latitude, Ts_new_title, xsize, ysize, temp_min, temp_max, temp_unit)
     plt.title(Ts_new_title, fontsize = 16)
     plt.savefig(image_path + "T_new.png")
     plt.close()
@@ -818,7 +818,7 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
     dEBV_title = f'$E(B-V)$ of {plot_title}'
     dEBV_bounds = [0, 1]
     dEBV_unit = 'dEBV'
-    plot_map_region(dEBV, dist, longitude, latitude, xsize, ysize, dEBV_bounds[0], dEBV_bounds[1], dEBV_title, dEBV_unit)
+    plot_map_region(dEBV, dist, longitude, latitude, dEBV_title, xsize, ysize, dEBV_bounds[0], dEBV_bounds[1], dEBV_unit)
     plt.title(dEBV_title, fontsize = 16)
     plt.savefig(image_path + "dEBV.png")
     plt.close()
@@ -830,8 +830,8 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
         Ttracer_title = f'$T$ Tracer of {plot_title} at {frequency[f_index]} GHz'
         Ttracer_bounds = [None, None]
         Ttracer_unit = 'None'
-        plot_map_region(temptracer[f_index], dist, longitude, latitude, xsize, ysize, Ttracer_bounds[0], Ttracer_bounds[0], 
-                        Ttracer_title, Ttracer_unit )
+        plot_map_region(temptracer[f_index], dist, longitude, latitude, Ttracer_title, xsize, ysize, Ttracer_bounds[0], Ttracer_bounds[0], 
+                        Ttracer_unit )
         plt.title(Ttracer_title, fontsize = 16)
         plt.savefig(image_path + f"temptracer_{frequency[f_index]}.png")
         plt.close()
@@ -840,8 +840,8 @@ def create_rgb_panel(maps_dict, frequency, dist, longitude, latitude, plot_title
         densxtemp_title = 'Normalized $T$ Tracer X $E(B-V)$ of' + '\n' + f' {plot_title} at {frequency[f_index]} GHz'
         densxtemp_bounds = [0, 0.2]
         densxtemp_unit = 'None'
-        plot_map_region(densxtemp[f_index], dist, longitude, latitude, xsize, ysize, densxtemp_bounds[0], densxtemp_bounds[1], 
-                        densxtemp_title, densxtemp_unit)
+        plot_map_region(densxtemp[f_index], dist, longitude, latitude, densxtemp_title, xsize, ysize, densxtemp_bounds[0], densxtemp_bounds[1], 
+                        densxtemp_unit)
         plt.title(densxtemp_title, fontsize = 16)
         plt.savefig(image_path + f"dxT_norm_{frequency[f_index]}.png", bbox_inches='tight', pad_inches=0.1)
         plt.close()

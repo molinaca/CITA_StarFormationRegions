@@ -102,6 +102,38 @@ def check_if_array_or_float(point):
         return None
     return point_new
 
+def take_out_zeros(array):
+    '''
+    Takes out zeros from an array
+
+    Parameters:
+    array: array, array to take out zeros from
+
+    Output:
+    nonzero_array: array, array with zeros taken out
+    '''
+    mask = array > 0
+
+    nonzero_array = array[mask]
+
+    return nonzero_array
+
+def take_out_infinities(array):
+    '''
+    Takes out any infinities from an array.
+
+    Parameters:
+    array: array, array to take out infinities from
+
+    Output:
+    finite_array: array, array with infinities taken out
+    '''
+    mask = array != np.inf
+
+    finite_array = array[mask]
+
+    return finite_array
+
 ### 1.2: Conversions
 
 def convert_to_lonlat(theta, phi):
@@ -163,6 +195,30 @@ def dist_to_angdist(d, D):
     ang_dist = 2 * np.arcsin(d / (2 * D)) #Derived from small angle approximation
 
     return ang_dist
+
+def get_cartesian(l, b, d, radians = True):
+    '''
+    Convert galactic coordinates to cartesian coordinates.
+
+    Parameters:
+    l, b: arrays, longitudes and latitudes
+    d: array, distances
+    radians: bool, whether the angles are in radians or not
+
+    Output:
+    x, y, z: arrays, cartesian coordinates
+    '''
+    #If not in radians perform conversion
+    if radians == False:
+        l = np.radians(l)
+        b = np.radians(b)
+    
+    #Perform calculations
+    x = (d*np.cos(b))*np.cos(l)
+    y = (d*np.cos(b))*np.sin(l)
+    z = d*np.sin(b)
+
+    return x, y, z
 
 ## 2: Temperature and dEBV Map Manipulation
 ### 2.1: Functions for getting temperature tracers
@@ -502,7 +558,7 @@ def get_dist_slice(dists, distslices):
         dist_indices[dists >= distslices[-1]] = len(distslices)
     return dist_indices
 
-def make_array_with_combined_distance_slices(coords_list, n_distslices, distslices, with_colon=True):
+def make_array_with_combined_distance_slices(coords_list, n_distslices, distslices):
     '''
     Combine distance slices of an array into a singular array.
 
@@ -514,16 +570,9 @@ def make_array_with_combined_distance_slices(coords_list, n_distslices, distslic
     '''
 
     #Make list of combined coordinates
-    if with_colon == True:
-        l_list = [coords_list[ds_index][:, 0] for ds_index in range(n_distslices)]
-        b_list = [coords_list[ds_index][:, 1] for ds_index in range(n_distslices)]
-        d_list = [np.full(len(coords_list[ds_index]), distslices[ds_index]) for ds_index in range(n_distslices)]
-
-
-    else:
-        l_list = [coords_list[ds_index][0] for ds_index in range(n_distslices)]
-        b_list = [coords_list[ds_index][1] for ds_index in range(n_distslices)]
-        d_list = [np.full(len(coords_list[ds_index][0]), distslices[ds_index]) for ds_index in range(n_distslices)]
+    l_list = [coords_list[ds_index][0] for ds_index in range(n_distslices)]
+    b_list = [coords_list[ds_index][1] for ds_index in range(n_distslices)]
+    d_list = [np.full(len(coords_list[ds_index][0]), distslices[ds_index]) for ds_index in range(n_distslices)]
 
     #Combine lists into one array
     l_array = np.concatenate(l_list)
@@ -663,6 +712,133 @@ def get_min_distance(l_1, b_1, d_1, l_2, b_2, d_2, within_threshold = False, thr
         return None
     else:
         return min_distance
+    
+def find_distance_candidates(ysos_coords, hot_and_cold_coords, threshold, n_distslices, distslices, mode = 'number'):
+    '''
+    Finds most probable distance candidates of YSOs based on one of two methods. Mode 'number' does it based on the most number of hot and cold regions. The
+    mode 'minimum' does it based on the minimum distance to a hot and cold region. This will return all the ysos (whether or not a distance candidate
+    was found) and the distance candidates for each yso.
+
+    Parameters:
+    ysos_coords: array, [l, b] in radians. 
+    hot_and_cold_coords: array, [l, b, d] in radians and parsecs
+    threshold: float, threshold for what distances to consider, in parsecs
+    n_distslices: int, number of distance slices
+    distslices: array, distances of each distance slice
+    mode: bool, whether to use 'number' or 'minimum' to find distance candidates
+
+    Output:
+        Mode: Number:
+            distance_candidates: array, distance candidates for each yso
+            n_close_regions_arr: array, number of close regions for each yso
+        Mode: Minimum:
+            distance_candidates: array, distance candidates for each yso
+            min_distances: array, minimum distance for each yso
+            n_close_regions_arr: array, number of close regions for each yso
+    '''
+    #Get coordinates of YSOs and hot and cold regions
+    l_ysos = ysos_coords[0]
+    b_ysos = ysos_coords[1]
+
+    l_tracer = hot_and_cold_coords[0]
+    b_tracer = hot_and_cold_coords[1]
+    d_tracer = hot_and_cold_coords[2]
+
+    
+    #Get number of YSOs
+
+    n_ysos = len(l_ysos)
+
+    #Initialize Arrays
+
+    distance_candidates = np.zeros(n_ysos) #Store distance candidates
+    n_close_regions_arr = np.zeros(n_ysos) #Store number of close regions
+    min_distances = np.full(n_ysos, np.inf) #Store minimum distances, want it to be infinity because looking for a minimum
+
+    #Iterate through each distance slice
+    for ds_index in range(n_distslices):
+        #Get distance of distance slice in pc, will be the distance of YSOs
+        dist = distslices[ds_index]*1000
+
+        dist_ysos_to_new_sf = calculate_distance_of_two_arrays_in_space(l_ysos, b_ysos, dist, l_tracer, b_tracer, d_tracer)
+
+        #Get mask of close regions
+        close_mask = dist_ysos_to_new_sf < threshold
+
+        #Find sum of hot and cold regions within slice
+        n_close_regions = np.sum(close_mask, axis=1)
+
+        #Now pick mode
+
+        if mode == 'number':
+
+            #If condition is met, update distance candidates and n regions based on mask
+            update_mask = n_close_regions > n_close_regions_arr
+
+            n_close_regions_arr[update_mask] = n_close_regions[update_mask]
+
+            distance_candidates[update_mask] = dist
+
+        elif mode == 'minimum':
+
+            #Distances within masks
+
+            close_dists = np.where(close_mask, dist_ysos_to_new_sf, np.inf)
+
+            #If no distances within masks continue
+            if np.all(close_dists == np.inf, axis=1).all():
+                continue
+
+            else:
+
+                #Get minimum and update if minimum is smaller than before
+
+                min_dist = np.min(close_dists, axis=1)
+
+                update_mask = min_dist < min_distances
+
+                min_distances[update_mask] = min_dist[update_mask]
+                distance_candidates[update_mask] = dist
+                n_close_regions_arr[update_mask] = n_close_regions[update_mask]
+
+        else:
+            print('Mode not recognized, please choose either number or minimum')
+            return None
+
+    #Keep track of how many YSOs had no distance candidates (because no nearby hot and cold regions)
+    nonzero_mask_number = n_close_regions_arr > 0
+    n_no_close_regions = n_close_regions_arr[~nonzero_mask_number]
+    print(f'{len(n_no_close_regions)} have no nearby hot and cold regions')
+
+    #Print based on mode
+    if mode == 'number':
+
+        return distance_candidates, n_close_regions_arr
+    
+    elif mode == 'minimum':
+            
+        return distance_candidates, min_distances, n_close_regions_arr
+    
+def get_specific_ysos(distances, l, b):
+    '''
+    This function is used to get arrays of the cleaned YSOs while maintained the indices of the original array.
+
+    Parameters:
+    distances: array, the distances of the YSOs
+    l, b: arrays of the longitudes and latitudes of the YSOs 
+
+    Output:
+    l_specific, b_specific: arrays of the longitudes and latitudes of the YSOs with distances greater than 0
+    '''
+    mask = distances > 0
+    l_arr = np.array(l)
+    b_arr = np.array(b)
+
+    l_specific = l_arr[mask]
+    b_specific = b_arr[mask]
+
+    return l_specific, b_specific
+
             
 ## 4: Functions for RGB and Imaging
 def get_RGB(dens_temp):

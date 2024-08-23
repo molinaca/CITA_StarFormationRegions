@@ -1,5 +1,6 @@
 #Process to load different files
 import h5py
+import numpy as np
 
 def load_3D_temperature_data(file):
     data_dict = {}

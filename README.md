@@ -56,7 +56,7 @@ The notebook creates a new temperature only map with a higher resolution, then c
 
 ### flagging_properties.ipynb
 
-Notebook that manually flags properties such as: Regions with high density, cold temperature (high in R channel), hot temperature (high in B channel), a mix of both hot and cold regions, and temperature gradient. It produces panels to provide a visualization of how well the flagging is working. 
+Notebook that manually flags properties such as: Regions with high density, cold temperature (high in R channel), hot temperature (high in B channel), a mix of both hot and cold regions, and temperature gradient. It produces panels to provide a visualization of how well the flagging is working. Correlates YSOs and SFCs to properties and finds their distances. Flags new potential sfrs and finds distance candidates. 
 
 
 
